@@ -125,11 +125,90 @@ function renderTexts(beatRefs) {
   });
 }
 
+/** 声・速さ・高さのパネルを配線する */
+function setupVoicePanel(narrator) {
+  const toggle = document.getElementById('btn-voice');
+  const panel = document.getElementById('voice-panel');
+  const select = document.getElementById('voice-select');
+  const rate = document.getElementById('voice-rate');
+  const pitch = document.getElementById('voice-pitch');
+  const rateOut = document.getElementById('voice-rate-out');
+  const pitchOut = document.getElementById('voice-pitch-out');
+  const preview = document.getElementById('voice-preview');
+  const reset = document.getElementById('voice-reset');
+
+  const fmt = (v) => Number(v).toFixed(2);
+  const syncSliders = () => {
+    rate.value = narrator.rate;
+    pitch.value = narrator.pitch;
+    rateOut.textContent = fmt(narrator.rate);
+    pitchOut.textContent = fmt(narrator.pitch);
+  };
+
+  const fillVoices = (voices, current) => {
+    select.innerHTML = '';
+    voices.forEach((v) => {
+      const o = document.createElement('option');
+      o.value = v.name;
+      // 「Eddy (日本語（日本）)」のような冗長な括弧を落として読みやすくする
+      o.textContent = v.name.replace(/\s*[(（].*$/, '');
+      select.appendChild(o);
+    });
+    if (current) select.value = current.name;
+    toggle.disabled = voices.length < 1;
+  };
+
+  if (narrator.ready) fillVoices(narrator.voices, narrator.voice);
+  narrator.onReady = (voices, current) => fillVoices(voices, current);
+  syncSliders();
+
+  const open = (on) => {
+    panel.hidden = !on;
+    toggle.setAttribute('aria-expanded', String(on));
+    toggle.dataset.state = on ? 'open' : '';
+  };
+
+  toggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    open(panel.hidden);
+  });
+  panel.addEventListener('click', (e) => e.stopPropagation());
+  document.addEventListener('click', () => open(false));
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') open(false);
+  });
+
+  select.addEventListener('change', () => {
+    narrator.setVoice(select.value);
+    narrator.preview();
+  });
+  rate.addEventListener('input', () => {
+    narrator.setRate(rate.value);
+    rateOut.textContent = fmt(narrator.rate);
+  });
+  rate.addEventListener('change', () => narrator.preview('この速さで読み上げます。'));
+  pitch.addEventListener('input', () => {
+    narrator.setPitch(pitch.value);
+    pitchOut.textContent = fmt(narrator.pitch);
+  });
+  pitch.addEventListener('change', () => narrator.preview('この高さで読み上げます。'));
+  preview.addEventListener('click', () => narrator.preview());
+  reset.addEventListener('click', () => {
+    narrator.setRate(0.94);
+    narrator.setPitch(0.92);
+    syncSliders();
+    narrator.preview();
+  });
+
+  return { markUnavailable: () => (toggle.disabled = true) };
+}
+
 /** 右上のトグル群を配線する */
 export function setupControls({ narrator, onAudioChange }) {
   const audioBtn = document.getElementById('btn-audio');
   const modeBtn = document.getElementById('btn-mode');
   const audioLabel = audioBtn.querySelector('.lbl');
+  const voicePanel = setupVoicePanel(narrator);
 
   const syncMode = () => {
     const m = getMode();
@@ -151,6 +230,7 @@ export function setupControls({ narrator, onAudioChange }) {
     audioBtn.dataset.state = 'na';
     audioLabel.textContent = '音声：非対応';
     audioBtn.title = 'このブラウザ／OSに日本語の読み上げ音声が見つかりませんでした。字幕のみ表示します。';
+    voicePanel.markUnavailable();
   };
 
   if (!narrator.supported) {

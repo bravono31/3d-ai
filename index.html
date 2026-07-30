@@ -24,9 +24,42 @@
       <button id="btn-mode" class="ctl" type="button" data-state="simple">
         <span class="ico">◐</span><span class="lbl">かんたん</span>
       </button>
-      <button id="btn-audio" class="ctl" type="button" data-state="off">
-        <span class="ico">♪</span><span class="lbl">音声 OFF</span>
-      </button>
+      <div class="audio-group">
+        <button id="btn-audio" class="ctl" type="button" data-state="off">
+          <span class="ico">♪</span><span class="lbl">音声 OFF</span>
+        </button>
+        <button
+          id="btn-voice"
+          class="ctl ctl-icon"
+          type="button"
+          aria-label="声の設定"
+          aria-expanded="false"
+          title="声・速さ・高さを選ぶ"
+        >
+          ▾
+        </button>
+
+        <div id="voice-panel" hidden>
+          <label class="vp-row">
+            <span>声</span>
+            <select id="voice-select"></select>
+          </label>
+          <label class="vp-row">
+            <span>速さ</span>
+            <input id="voice-rate" type="range" min="0.7" max="1.2" step="0.02" />
+            <output id="voice-rate-out"></output>
+          </label>
+          <label class="vp-row">
+            <span>高さ</span>
+            <input id="voice-pitch" type="range" min="0.7" max="1.2" step="0.02" />
+            <output id="voice-pitch-out"></output>
+          </label>
+          <div class="vp-actions">
+            <button id="voice-preview" type="button">▶ 試聴</button>
+            <button id="voice-reset" type="button">既定に戻す</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <nav id="chapnav" aria-label="章の移動"></nav>
