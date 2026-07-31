@@ -1,4 +1,4 @@
-import { chapters, references } from '../data/content.js';
+import { chapters, references, interludes } from '../data/content.js';
 import { getMode, setMode, onModeChange } from './mode.js';
 
 const pad2 = (n) => String(n).padStart(2, '0');
@@ -27,11 +27,26 @@ export function buildDOM() {
     </div>`;
   doc.appendChild(hero);
 
-  // ── 各章
+  // ── 各章（話題が変わるところには区切りページを先に挟む）
   const beatRefs = [];
   const chapterEls = [];
+  const interludeEls = [];
 
   chapters.forEach((ch, ci) => {
+    const il = interludes.find((x) => x.before === ch.id);
+    if (il) {
+      const sec = document.createElement('section');
+      sec.className = 'interlude';
+      sec.innerHTML = `
+        <div class="interlude-inner">
+          <p class="il-eyebrow">${il.eyebrow}</p>
+          <h2 class="il-title">${il.lines.join('<br>')}</h2>
+          <p class="il-lede">${il.lede}</p>
+        </div>`;
+      doc.appendChild(sec);
+      interludeEls.push(sec);
+    }
+
     const sec = document.createElement('section');
     sec.className = 'chapter';
     sec.dataset.id = ch.id;
@@ -117,7 +132,16 @@ export function buildDOM() {
     a.addEventListener('click', () => scrollToBeat(beatRefs, ci, 0));
   });
 
-  return { doc, hero, refs, chapterEls, beatRefs, navDots: [...nav.children], markToc: toc.mark };
+  return {
+    doc,
+    hero,
+    refs,
+    chapterEls,
+    beatRefs,
+    interludeEls,
+    navDots: [...nav.children],
+    markToc: toc.mark,
+  };
 }
 
 /** そのビートの中心が「読ませる位置」に来るところまでスクロールする */

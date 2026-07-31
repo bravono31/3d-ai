@@ -73,10 +73,12 @@ function cardState(t, read) {
  * カードは本文なので生のスクロール位置に直結させ、遅れを感じさせない。
  */
 export class ScrollTracker {
-  constructor({ chapterEls, beatRefs }) {
+  constructor({ chapterEls, beatRefs, interludeEls = [] }) {
     this.chapterEls = chapterEls;
+    this.interludeEls = interludeEls;
     this.byChapter = chapterEls.map((_, ci) => beatRefs.filter((b) => b.ci === ci));
     this.layout = [];
+    this.ilLayout = [];
     this.smooth = 0;
     this.smoothChapter = -1;
     this.state = { chapter: 0, beat: 0, beatFloat: 0, p: 0, docProgress: 0 };
@@ -105,8 +107,32 @@ export class ScrollTracker {
       }));
       return { top: r.top + sy, bottom: r.bottom + sy, beats };
     });
+    this.ilLayout = this.interludeEls.map((el) => {
+      const r = el.getBoundingClientRect();
+      return { center: r.top + sy + el.offsetHeight / 2, h: el.offsetHeight, el };
+    });
     this.docHeight = document.documentElement.scrollHeight - window.innerHeight;
     this.read = window.innerWidth >= 900 ? READ_WIDE : READ_NARROW;
+  }
+
+  /**
+   * 区切りページの見え方。画面の中央に近いほど 1。
+   * 戻り値は「いま区切りがどれだけ画面を占めているか」で、3Dを引っ込める量に使う。
+   */
+  _paintInterludes(focus, vh) {
+    let cover = 0;
+    for (const il of this.ilLayout) {
+      const d = Math.abs(focus - il.center) / (vh * 0.62);
+      const v = ease(clamp(1 - d));
+      if (v > cover) cover = v;
+      if (Math.abs((il._v ?? -1) - v) > 0.004) {
+        il._v = v;
+        const s = il.el.style;
+        s.setProperty('--il', v.toFixed(3));
+        s.setProperty('--il-y', ((1 - v) * 34).toFixed(1) + 'px');
+      }
+    }
+    return cover;
   }
 
   /** 前後の章ぶんだけカードを更新する（章をまたぐ瞬間にカードが飛び出さないように） */
@@ -189,8 +215,10 @@ export class ScrollTracker {
     }
 
     this._paintCards(ci, focus, vh);
+    const interlude = this._paintInterludes(focus, vh);
 
     this.state = {
+      interlude,
       chapter: ci,
       beat: Math.max(0, Math.min(centers.length - 1, Math.round(this.smooth))),
       beatFloat: this.smooth,

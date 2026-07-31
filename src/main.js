@@ -41,7 +41,7 @@ const SCENES = {
 };
 
 // ── DOM 構築
-const { chapterEls, beatRefs, navDots, markToc } = buildDOM();
+const { chapterEls, beatRefs, interludeEls, navDots, markToc } = buildDOM();
 const canvas = document.getElementById('stage');
 const fadeEl = document.getElementById('fade');
 const progressEl = document.querySelector('#progress i');
@@ -80,7 +80,7 @@ const manager = new SceneManager(
   }))
 );
 
-const tracker = new ScrollTracker({ chapterEls, beatRefs });
+const tracker = new ScrollTracker({ chapterEls, beatRefs, interludeEls });
 
 // ── ナレーション
 const narrator = new Narrator();
@@ -147,10 +147,10 @@ function frame(now) {
 
   const s = tracker.measure(dt);
 
-  // ヒーローを読んでいるあいだは3Dを引っ込めて、見出しを邪魔しない。
+  // ヒーローと区切りページでは3Dを引っ込めて、見出しを邪魔しない。
   // 毎フレーム style を書くと合成が走るので、変化したときだけ触る。
   const heroFade = clamp01(window.scrollY / (window.innerHeight * 0.62));
-  const op = 0.12 + heroFade * 0.88;
+  const op = (0.12 + heroFade * 0.88) * (1 - s.interlude * 0.88);
   if (Math.abs(op - lastOpacity) > 0.004) {
     lastOpacity = op;
     canvas.style.opacity = op.toFixed(3);
