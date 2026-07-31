@@ -453,8 +453,10 @@ body {
 }
 
 .card {
-  --vis: 0;
-  --shift: 0px;
+  /* 位置・濃さ・拡大率は scroll.js が毎フレーム書く（下から入り→静止→上へ抜ける） */
+  --card-y: 46px;
+  --card-o: 0;
+  --card-s: 0.985;
   pointer-events: auto;
   width: min(480px, 100%);
   padding: 26px 30px 30px;
@@ -463,9 +465,10 @@ body {
   border: 1px solid var(--card-br);
   backdrop-filter: blur(14px);
   box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
-  opacity: calc(0.1 + 0.9 * var(--vis));
-  transform: translateY(var(--shift));
-  /* --vis はスクロール側で減衰済み。ここで transition を重ねると二重にかかって鈍る */
+  opacity: var(--card-o);
+  transform: translate3d(0, var(--card-y), 0) scale(var(--card-s));
+  transform-origin: 50% 65%;
+  /* 値は毎フレームJSが書くので、transition を重ねると二重にかかって鈍る */
   will-change: opacity, transform;
 }
 
@@ -622,5 +625,9 @@ html[data-mode="deep"] .beat-body strong {
   #fade {
     transition: none;
     animation: none;
+  }
+  /* 動きを抑える設定では、上下の移動をやめて濃さの変化だけにする */
+  .card {
+    transform: none;
   }
 }
