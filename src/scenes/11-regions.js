@@ -42,7 +42,7 @@ export default class RegionsScene extends BaseScene {
     );
 
     // 陸地の点群
-    const pts = landPoints(1.4);
+    const pts = landPoints(0.85);
     const pos = new Float32Array(pts.length * 3);
     pts.forEach(([lon, lat], i) => {
       const v = toXYZ(lat, lon, R * 1.004);

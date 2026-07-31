@@ -64,9 +64,21 @@ src/
 │ ├ ui.js               DOM組み立てとトグル配線
 │ └ label.js            CanvasTexture による日本語スプライト
 ├ scenes/               章ごとの3Dシーン（01〜14）
-├ data/                 本文・年表・系譜・地域・レイヤー・大陸ポリゴン
+├ data/                 本文・年表・系譜・地域・レイヤー・陸地マスク
 └ styles/main.css
+
+scripts/
+└ make-land-mask.mjs    海岸線データ → 陸地マスクの変換（再生成が必要なときだけ）
 ```
+
+### 地球儀の陸地データ
+
+第11章の地球儀は、実際の海岸線から起こした 0.5° 格子の陸地マスク
+（`src/data/land-mask.js`）を引いて描いています。元データは
+[Natural Earth](https://www.naturalearthdata.com/)（パブリックドメイン）で、
+[world-atlas](https://github.com/topojson/world-atlas) の `land-110m` を
+`scripts/make-land-mask.mjs` でビットマスクへ変換したものです。
+実行時にポリゴンの内外判定を回すと重いので、あらかじめ焼いてあります。
 
 シーンは乱数をシード固定し、`update(progress)` だけで見た目が決まるように書いてあります。
 スクロールを往復しても同じ絵に戻ります。
