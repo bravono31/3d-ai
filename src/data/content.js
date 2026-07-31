@@ -478,19 +478,24 @@ const byId = Object.fromEntries(base.map((c) => [c.id, c]));
 
 /**
  * 最終的な章の並び。
- * 「仕組み → 基盤 → 歴史 → 産業 → 製品 → 地政学 → 法 → 用途 → 統治」の順に読ませる。
+ * 「仕組み → 歴史 → 系譜からの橋渡し（計算基盤）→ 産業 → 活用 → 問題」の順に読ませる。
+ *
+ * compute（GPU・CUDA・蒸留）は genealogy の直後に置く。蒸留の係争ビートが
+ * Moonshot・DeepSeek・MiniMax を名指しするため、その企業群を先に紹介しておく必要がある。
+ * openness（開くか閉じるか）は compare・agents と同じ「どう選び、どう使うか」の一群として
+ * agents の直後に置き、後半の問題編（地域・法・軍事・統治）への橋渡しにする。
  */
 export const chapters = [
   byId.tokens, //      1 ことばを数に変える
   byId.attention, //   2 注意という発明
-  compute, //          3 計算という土台（GPU・CUDA・蒸留）
+  byId.diffusion, //   3 画像・動画の生成
   byId.history, //     4 技術史
   byId.genealogy, //   5 メーカーの系譜
-  openness, //         6 開くか、閉じるか
-  byId.diffusion, //   7 画像・動画の生成
-  byId.layers, //      8 レイヤー構造
-  byId.compare, //     9 Claude / GPT / Gemini
-  byId.agents, //     10 エージェント vs チャット
+  compute, //          6 計算という土台（GPU・CUDA・蒸留）
+  byId.layers, //      7 レイヤー構造
+  byId.compare, //     8 Claude / GPT / Gemini
+  byId.agents, //      9 エージェント vs チャット
+  openness, //        10 開くか、閉じるか
   byId.regions, //    11 地域
   conflicts, //       12 法と政治の衝突
   uses, //            13 軍事と科学

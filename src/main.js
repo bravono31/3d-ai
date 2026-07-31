@@ -10,15 +10,15 @@ import { getMode, onModeChange } from './core/mode.js';
 
 import TokensScene from './scenes/01-tokens.js';
 import AttentionScene from './scenes/02-attention.js';
-import HistoryScene from './scenes/03-history.js';
-import GenealogyScene from './scenes/04-genealogy.js';
-import DiffusionScene from './scenes/05-diffusion.js';
-import LayersScene from './scenes/06-layers.js';
-import RegionsScene from './scenes/07-regions.js';
+import DiffusionScene from './scenes/03-diffusion.js';
+import HistoryScene from './scenes/04-history.js';
+import GenealogyScene from './scenes/05-genealogy.js';
+import ComputeScene from './scenes/06-compute.js';
+import LayersScene from './scenes/07-layers.js';
 import CompareScene from './scenes/08-compare.js';
 import AgentsScene from './scenes/09-agents.js';
-import ComputeScene from './scenes/10-compute.js';
-import OpennessScene from './scenes/11-openness.js';
+import OpennessScene from './scenes/10-openness.js';
+import RegionsScene from './scenes/11-regions.js';
 import ConflictsScene from './scenes/12-conflicts.js';
 import UsesScene from './scenes/13-uses.js';
 import FrontierScene from './scenes/14-frontier.js';
@@ -26,14 +26,14 @@ import FrontierScene from './scenes/14-frontier.js';
 const SCENES = {
   tokens: TokensScene,
   attention: AttentionScene,
-  compute: ComputeScene,
+  diffusion: DiffusionScene,
   history: HistoryScene,
   genealogy: GenealogyScene,
-  openness: OpennessScene,
-  diffusion: DiffusionScene,
+  compute: ComputeScene,
   layers: LayersScene,
   compare: CompareScene,
   agents: AgentsScene,
+  openness: OpennessScene,
   regions: RegionsScene,
   conflicts: ConflictsScene,
   uses: UsesScene,

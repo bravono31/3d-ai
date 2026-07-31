@@ -1,4 +1,4 @@
-/** 第3章の3Dタイムライン。era は 0..3 で beat に対応。 */
+/** 第4章の3Dタイムライン。era は 0..3 で beat に対応。 */
 export const events = [
   { y: 1943, era: 0, t: '形式ニューロン', d: 'McCulloch & Pitts' },
   { y: 1958, era: 0, t: 'パーセプトロン', d: 'Rosenblatt' },

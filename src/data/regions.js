@@ -1,4 +1,4 @@
-/** 第7章。beat 0..4 が下の5地域に対応する。metrics は 0..1。 */
+/** 第11章。beat 0..4 が下の5地域に対応する。metrics は 0..1。 */
 export const regions = [
   {
     id: 'us',

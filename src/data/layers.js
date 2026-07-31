@@ -1,4 +1,4 @@
-/** 第6章の積層プレート。index 0 が最下層。 */
+/** 第7章の積層プレート。index 0 が最下層。 */
 export const layers = [
   {
     id: 'chip',
