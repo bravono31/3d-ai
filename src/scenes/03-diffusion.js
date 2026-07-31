@@ -94,10 +94,15 @@ export default class DiffusionScene extends BaseScene {
       image[i * 3 + 1] = -(gy / (GH - 1) - 0.5) * IH;
       image[i * 3 + 2] = 0;
 
-      // ノイズ状態：立方体の中にばらまく
-      noise[i * 3] = (rand() - 0.5) * IW * 1.35;
-      noise[i * 3 + 1] = (rand() - 0.5) * IH * 1.9;
-      noise[i * 3 + 2] = (rand() - 0.5) * 5.5;
+      /*
+       * ノイズ状態：画素の「位置」は最初から最後まで動かない。
+       * 拡散は決まった大きさの格子の上で値（色）だけを変える処理であって、
+       * 散らばった粒を集めて並べ替えるのではない。
+       * 奥行きのゆらぎだけ、ノイズの大きさを表すために持たせる。
+       */
+      noise[i * 3] = image[i * 3];
+      noise[i * 3 + 1] = image[i * 3 + 1];
+      noise[i * 3 + 2] = (rand() - 0.5) * 1.6;
 
       // 潜在状態：小さく密な板
       latent[i * 3] = image[i * 3] * 0.3;
@@ -249,14 +254,15 @@ export default class DiffusionScene extends BaseScene {
 
     const pos = this.posAttr.array;
     const col = this.colAttr.array;
-    // 収束の残りゆらぎ：まだノイズが取れていない分だけ震えさせる
-    const jitter = (1 - den) * 0.35 + (den < 1 ? 0.02 : 0);
+    // まだ取れていないノイズの量。位置ではなく「値のばらつき」として使う。
+    const nAmp = 1 - den;
 
     for (let i = 0; i < COUNT; i++) {
       const o = i * 3;
-      let x = lerp(s.noise[o], s.image[o], den);
-      let y = lerp(s.noise[o + 1], s.image[o + 1], den);
-      let z = lerp(s.noise[o + 2], s.image[o + 2], den);
+      // 縦横の位置は動かさない。デノイズの間、画像の大きさも画素の並びも変わらない。
+      let x = s.image[o];
+      let y = s.image[o + 1];
+      let z = lerp(s.noise[o + 2], 0, den);
 
       if (lat > 0) {
         x = lerp(x, s.latent[o], lat);
@@ -269,20 +275,23 @@ export default class DiffusionScene extends BaseScene {
         z = lerp(z, s.video[o + 2], vid);
       }
 
-      if (jitter > 0.005) {
-        const ph = i * 0.37;
-        x += Math.sin(time * 3.1 + ph) * jitter * 0.32;
-        y += Math.cos(time * 2.7 + ph * 1.3) * jitter * 0.32;
-        z += Math.sin(time * 2.2 + ph * 0.7) * jitter * 0.5;
-      }
-
       pos[o] = x;
       pos[o + 1] = y;
       pos[o + 2] = z;
 
-      col[o] = lerp(s.noiseCol[o], s.imgCol[o], den);
-      col[o + 1] = lerp(s.noiseCol[o + 1], s.imgCol[o + 1], den);
-      col[o + 2] = lerp(s.noiseCol[o + 2], s.imgCol[o + 2], den);
+      if (nAmp > 0.002) {
+        // 毎フレーム値が振れる砂嵐。残りノイズ量ぶんだけ画像の色に混ぜる。
+        let h = Math.sin(i * 127.1 + time * 29.0) * 43758.5453;
+        h -= Math.floor(h);
+        const g = 0.18 + h * 0.82;
+        col[o] = lerp(s.imgCol[o], g * 0.82, nAmp);
+        col[o + 1] = lerp(s.imgCol[o + 1], g * 0.88, nAmp);
+        col[o + 2] = lerp(s.imgCol[o + 2], g, nAmp);
+      } else {
+        col[o] = s.imgCol[o];
+        col[o + 1] = s.imgCol[o + 1];
+        col[o + 2] = s.imgCol[o + 2];
+      }
     }
     this.posAttr.needsUpdate = true;
     this.colAttr.needsUpdate = true;

@@ -21,6 +21,9 @@
     <div id="progress" aria-hidden="true"><i></i></div>
 
     <div id="controls">
+      <button id="btn-toc" class="ctl" type="button" aria-expanded="false" aria-controls="toc">
+        <span class="ico">☰</span><span class="lbl">目次</span>
+      </button>
       <button id="btn-mode" class="ctl" type="button" data-state="simple">
         <span class="ico">◐</span><span class="lbl">かんたん</span>
       </button>
@@ -63,6 +66,17 @@
     </div>
 
     <nav id="chapnav" aria-label="章の移動"></nav>
+
+    <div id="toc" hidden>
+      <div class="toc-panel" role="dialog" aria-modal="true" aria-label="目次">
+        <div class="toc-head">
+          <h2>目次</h2>
+          <p>全14章。見出しをクリックするとその場所へ移動します。</p>
+          <button id="toc-close" type="button" aria-label="目次を閉じる">✕</button>
+        </div>
+        <div class="toc-grid"></div>
+      </div>
+    </div>
 
     <div id="subtitle" aria-live="polite"><p></p></div>
 

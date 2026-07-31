@@ -104,16 +104,99 @@ export function buildDOM() {
     a.className = 'navdot';
     a.dataset.index = String(ci);
     a.innerHTML = `<i></i><span>${pad2(ch.no)} ${ch.title}</span>`;
-    a.addEventListener('click', () => {
-      chapterEls[ci].scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
     nav.appendChild(a);
   });
 
   renderTexts(beatRefs);
   onModeChange(() => renderTexts(beatRefs));
 
-  return { doc, hero, refs, chapterEls, beatRefs, navDots: [...nav.children] };
+  const toc = buildTOC(beatRefs);
+
+  // 章ドットも目次と同じく、ビートの中心へ寄せて止める
+  nav.querySelectorAll('.navdot').forEach((a, ci) => {
+    a.addEventListener('click', () => scrollToBeat(beatRefs, ci, 0));
+  });
+
+  return { doc, hero, refs, chapterEls, beatRefs, navDots: [...nav.children], markToc: toc.mark };
+}
+
+/** そのビートの中心が「読ませる位置」に来るところまでスクロールする */
+function scrollToBeat(beatRefs, ci, bi) {
+  const ref = beatRefs.find((b) => b.ci === ci && b.bi === bi);
+  if (!ref) return;
+  const r = ref.el.getBoundingClientRect();
+  const top = r.top + window.scrollY + ref.el.offsetHeight / 2 - window.innerHeight * 0.48;
+  window.scrollTo({ top: Math.max(0, Math.round(top)), behavior: 'smooth' });
+}
+
+/** 全体像がひと目で見えて、どこへでも飛べる目次 */
+function buildTOC(beatRefs) {
+  const wrap = document.getElementById('toc');
+  const grid = wrap.querySelector('.toc-grid');
+  const btn = document.getElementById('btn-toc');
+  const closeBtn = document.getElementById('toc-close');
+  const chItems = [];
+  const beatItems = [];
+
+  chapters.forEach((ch, ci) => {
+    const sec = document.createElement('section');
+    sec.className = 'toc-ch';
+
+    const head = document.createElement('button');
+    head.type = 'button';
+    head.className = 'toc-ch-head';
+    head.innerHTML = `<span class="n">${pad2(ch.no)}</span><span class="t">${ch.title}</span><span class="s">${ch.subtitle}</span>`;
+    head.addEventListener('click', () => {
+      scrollToBeat(beatRefs, ci, 0);
+      open(false);
+    });
+    sec.appendChild(head);
+    chItems.push(head);
+
+    const ol = document.createElement('ol');
+    ol.className = 'toc-beats';
+    ch.beats.forEach((b, bi) => {
+      const li = document.createElement('li');
+      const a = document.createElement('button');
+      a.type = 'button';
+      a.textContent = b.h;
+      a.addEventListener('click', () => {
+        scrollToBeat(beatRefs, ci, bi);
+        open(false);
+      });
+      li.appendChild(a);
+      ol.appendChild(li);
+      beatItems.push({ ci, bi, el: a });
+    });
+    sec.appendChild(ol);
+    grid.appendChild(sec);
+  });
+
+  let isOpen = false;
+  function open(on) {
+    isOpen = on;
+    wrap.hidden = !on;
+    btn.setAttribute('aria-expanded', String(on));
+    btn.dataset.state = on ? 'on' : '';
+    document.body.style.overflow = on ? 'hidden' : '';
+    if (on) closeBtn.focus();
+  }
+
+  btn.addEventListener('click', () => open(!isOpen));
+  closeBtn.addEventListener('click', () => open(false));
+  wrap.addEventListener('click', (e) => {
+    if (e.target === wrap) open(false); // 背景をクリックしたら閉じる
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && isOpen) open(false);
+  });
+
+  return {
+    mark(ci, bi) {
+      chItems.forEach((el, i) => el.classList.toggle('is-here', i === ci));
+      beatItems.forEach((it) => it.el.classList.toggle('is-here', it.ci === ci && it.bi === bi));
+    },
+  };
 }
 
 /** 現在のモードに応じて全カードの本文を差し替える */

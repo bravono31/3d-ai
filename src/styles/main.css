@@ -286,6 +286,155 @@ body {
   border-color: var(--accent);
 }
 
+/* ───────────────────────── 目次 */
+#toc {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4vh 4vw;
+  background: rgba(4, 6, 13, 0.82);
+  backdrop-filter: blur(10px);
+  animation: toc-in 0.18s ease-out;
+}
+#toc[hidden] {
+  display: none;
+}
+@keyframes toc-in {
+  from {
+    opacity: 0;
+  }
+}
+
+.toc-panel {
+  width: min(1180px, 100%);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  padding: 26px 30px 30px;
+  border-radius: 18px;
+  border: 1px solid var(--card-br);
+  background: rgba(9, 13, 25, 0.96);
+  box-shadow: 0 30px 80px -30px rgba(0, 0, 0, 0.95);
+}
+
+.toc-head {
+  position: relative;
+  padding-bottom: 14px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid rgba(120, 150, 210, 0.16);
+  flex: none;
+}
+.toc-head h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: 0.02em;
+}
+.toc-head p {
+  margin: 4px 0 0;
+  font-size: 12.5px;
+  color: var(--ink-faint);
+}
+#toc-close {
+  position: absolute;
+  top: -4px;
+  right: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--card-br);
+  background: rgba(20, 28, 46, 0.8);
+  color: var(--ink-dim);
+  font-size: 14px;
+  cursor: pointer;
+  transition: color 0.18s, border-color 0.18s;
+}
+#toc-close:hover {
+  color: var(--ink);
+  border-color: rgba(120, 150, 210, 0.5);
+}
+
+.toc-grid {
+  overflow-y: auto;
+  padding: 16px 4px 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: 22px 26px;
+}
+
+.toc-ch-head {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--font);
+}
+.toc-ch-head:hover {
+  background: rgba(120, 150, 210, 0.09);
+}
+.toc-ch-head .n {
+  grid-row: 1 / 3;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--ink-faint);
+  padding-top: 3px;
+}
+.toc-ch-head .t {
+  font-size: 14px;
+  font-weight: 800;
+  color: var(--ink);
+  line-height: 1.4;
+}
+.toc-ch-head .s {
+  font-size: 11.5px;
+  color: var(--ink-faint);
+  line-height: 1.4;
+}
+.toc-ch-head.is-here .n,
+.toc-ch-head.is-here .t {
+  color: var(--accent);
+}
+
+.toc-beats {
+  margin: 6px 0 0;
+  padding: 0 0 0 26px;
+  list-style: none;
+  border-left: 1px solid rgba(120, 150, 210, 0.16);
+  margin-left: 12px;
+}
+.toc-beats button {
+  display: block;
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: none;
+  color: var(--ink-dim);
+  font-family: var(--font);
+  font-size: 12.5px;
+  line-height: 1.55;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.toc-beats button:hover {
+  color: var(--ink);
+  background: rgba(120, 150, 210, 0.09);
+}
+.toc-beats button.is-here {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 /* ───────────────────────── 章ナビ */
 #chapnav {
   position: fixed;
@@ -615,6 +764,24 @@ html[data-mode="deep"] .beat-body strong {
   }
   #voice-panel {
     width: min(268px, calc(100vw - 24px));
+  }
+  #toc {
+    padding: 0;
+  }
+  .toc-panel {
+    max-height: 100vh;
+    height: 100%;
+    border-radius: 0;
+    border: 0;
+    padding: 18px 18px 24px;
+  }
+  .toc-grid {
+    grid-template-columns: 1fr;
+    gap: 18px;
+  }
+  /* 狭い画面では章名だけ出す。全部並べると縦に長くなりすぎる */
+  .toc-beats {
+    display: none;
   }
   #subtitle {
     bottom: 12px;

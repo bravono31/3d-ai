@@ -41,7 +41,7 @@ const SCENES = {
 };
 
 // ── DOM 構築
-const { chapterEls, beatRefs, navDots } = buildDOM();
+const { chapterEls, beatRefs, navDots, markToc } = buildDOM();
 const canvas = document.getElementById('stage');
 const fadeEl = document.getElementById('fade');
 const progressEl = document.querySelector('#progress i');
@@ -167,6 +167,7 @@ function frame(now) {
   if (s.beat !== lastBeat) {
     lastBeat = s.beat;
     speakCurrent();
+    markToc(s.chapter, s.beat);
   }
 
   const pct = s.docProgress * 100;
