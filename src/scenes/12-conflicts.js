@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp, rng } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, rng, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
 const BOOKS = 64;
@@ -273,10 +273,10 @@ export default class ConflictsScene extends BaseScene {
 
   update(p, bf, dt, time) {
     const scan = easeOut(this.enter(dt));
-    const scanOut = ease(seg(bf, 0.72, 1.0));
-    const suit = ease(seg(bf, 0.6, 1.0)) * (1 - ease(seg(bf, 1.75, 2.0)));
-    const state = ease(seg(bf, 1.6, 2.0)) * (1 - ease(seg(bf, 2.7, 2.92)));
-    const law = ease(seg(bf, 2.72, 3.0));
+    const scanOut = outAt(bf, 1);
+    const suit = inAt(bf, 1) * (1 - outAt(bf, 2));
+    const state = inAt(bf, 2) * (1 - outAt(bf, 3));
+    const law = inAt(bf, 3);
 
     // ── スキャン
     this.gScan.visible = bf < 1.05;

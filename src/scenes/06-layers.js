@@ -1,12 +1,12 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 import { layers, appValue } from '../data/layers.js';
 
 const PW = 7.4;
 const PD = 3.6;
 const PH = 0.42;
-const STEP = 1.32;
+const STEP = 1.18;
 
 function makeArrow(color, len, up) {
   const g = new THREE.Group();
@@ -92,7 +92,7 @@ export default class LayersScene extends BaseScene {
         weight: 800,
       });
       s.userData.aspect = s.scale.x / s.scale.y;
-      s.position.set(-3.6 + i * 2.45, (layers.length - 1) / 2 * STEP + 1.55, 1.2);
+      s.position.set(-3.6 + i * 2.45, (layers.length - 1) / 2 * STEP + 1.18, 1.2);
       s.material.opacity = 0;
       this.root.add(s);
       return s;
@@ -149,9 +149,9 @@ export default class LayersScene extends BaseScene {
 
   update(p, bf, dt, time) {
     const assemble = easeOut(this.enter(dt));
-    const fModel = ease(seg(bf, 0.6, 1.0)) * (1 - ease(seg(bf, 1.75, 2.1)));
-    const fApp = ease(seg(bf, 1.6, 2.0)) * (1 - ease(seg(bf, 2.7, 2.95)));
-    const fBoth = ease(seg(bf, 2.65, 3.0));
+    const fModel = inAt(bf, 1) * (1 - outAt(bf, 2));
+    const fApp = inAt(bf, 2) * (1 - outAt(bf, 3));
+    const fBoth = inAt(bf, 3);
 
     this.plates.forEach((pl, i) => {
       const t = clamp(assemble * (layers.length + 1.5) - i * 1.1);
@@ -182,7 +182,7 @@ export default class LayersScene extends BaseScene {
       const h = 0.3 * (0.7 + 0.3 * t);
       s.scale.set(h * s.userData.aspect, h, 1);
       s.position.y =
-        ((layers.length - 1) / 2) * STEP + 1.55 + Math.sin(time * 1.2 + i) * 0.06;
+        ((layers.length - 1) / 2) * STEP + 1.18 + Math.sin(time * 1.2 + i) * 0.06;
     });
     this.depLines.material.opacity = fApp * (0.3 + Math.sin(time * 2.4) * 0.15);
 

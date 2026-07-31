@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, rng } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, rng, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
 const TOKENS = ['言語', 'モデル', 'は', '次', 'の', 'トークン', 'を', '予測', 'する'];
@@ -153,8 +153,8 @@ export default class TokensScene extends BaseScene {
 
   update(p, bf, dt, time) {
     const spread = ease(seg(bf, 0.0, 0.7));
-    const vecIn = ease(seg(bf, 0.5, 0.95));
-    const toCloud = ease(seg(bf, 1.3, 1.95));
+    const vecIn = inAt(bf, 1);
+    const toCloud = inAt(bf, 2);
 
     this.ticks.material.opacity = spread * 0.7 * (1 - toCloud);
 

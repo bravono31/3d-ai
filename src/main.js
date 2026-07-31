@@ -137,21 +137,27 @@ function flash() {
 // ── メインループ
 let time = 0;
 let last = performance.now();
+let lastOpacity = -1;
+let lastPct = -1;
 
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
   time += dt;
 
-  const s = tracker.measure();
+  const s = tracker.measure(dt);
 
-  // ヒーローを読んでいるあいだは3Dを引っ込めて、見出しを邪魔しない
+  // ヒーローを読んでいるあいだは3Dを引っ込めて、見出しを邪魔しない。
+  // 毎フレーム style を書くと合成が走るので、変化したときだけ触る。
   const heroFade = clamp01(window.scrollY / (window.innerHeight * 0.62));
-  canvas.style.opacity = (0.12 + heroFade * 0.88).toFixed(3);
+  const op = 0.12 + heroFade * 0.88;
+  if (Math.abs(op - lastOpacity) > 0.004) {
+    lastOpacity = op;
+    canvas.style.opacity = op.toFixed(3);
+  }
 
   if (s.chapter !== lastChapter) {
     manager.setActive(s.chapter);
-    manager.prefetch(s.chapter + 1);
     navDots.forEach((d, i) => d.classList.toggle('is-active', i === s.chapter));
     if (lastChapter !== -1) flash();
     lastChapter = s.chapter;
@@ -163,7 +169,11 @@ function frame(now) {
     speakCurrent();
   }
 
-  progressEl.style.width = (s.docProgress * 100).toFixed(2) + '%';
+  const pct = s.docProgress * 100;
+  if (Math.abs(pct - lastPct) > 0.05) {
+    lastPct = pct;
+    progressEl.style.width = pct.toFixed(2) + '%';
+  }
 
   manager.update(s.p, s.beatFloat, dt, time);
   manager.render(renderer);
@@ -177,5 +187,6 @@ lastChapter = 0;
 last = performance.now();
 requestAnimationFrame(frame);
 
-// ヒーローに居るあいだも1章目のシーンが動いているようにしておく
-manager.prefetch(1);
+// シーンの初回組み立ては数十msかかる。スクロール中にそれが起きると引っかかるので、
+// 読み始めの空き時間のうちに全章ぶんを先に用意しておく。
+manager.prebuildAll();

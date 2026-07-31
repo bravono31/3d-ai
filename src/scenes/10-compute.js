@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp, rng } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, rng, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
 const GRID = 16; // GPU コアの格子
@@ -309,11 +309,11 @@ export default class ComputeScene extends BaseScene {
   }
 
   update(p, bf, dt, time) {
-    const parOut = ease(seg(bf, 0.75, 1.0));
-    const moatIn = ease(seg(bf, 0.6, 1.0));
-    const moatOut = ease(seg(bf, 1.75, 2.0));
-    const distIn = ease(seg(bf, 1.6, 2.0));
-    const fight = ease(seg(bf, 2.6, 2.95));
+    const parOut = outAt(bf, 1);
+    const moatIn = inAt(bf, 1);
+    const moatOut = outAt(bf, 2);
+    const distIn = inAt(bf, 2);
+    const fight = inAt(bf, 3);
 
     // ── 並列性
     this.gPar.visible = bf < 1.05;

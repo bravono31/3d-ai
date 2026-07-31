@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp, rng } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, rng, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
 const GW = 104; // 画像グリッドの横
@@ -241,10 +241,11 @@ export default class DiffusionScene extends BaseScene {
     // ビート1以降はスクロールで 1 に固定され、以後は画像が確定する。
     const cyc = (time % 7) / 7;
     const timeDen = ease(clamp(cyc / 0.62));
-    const den = Math.max(timeDen, ease(seg(bf, 0.25, 0.65))); // ノイズ→画像
-    const lat = ease(seg(bf, 0.68, 1.0)); // 画像→潜在
-    const prm = ease(seg(bf, 1.6, 2.0)); // プロンプト注入
-    const vid = ease(seg(bf, 2.65, 3.0)); // 潜在→動画フレーム
+    // 画像が出来上がってから圧縮に移るよう、この章だけは2段階に分ける
+    const den = Math.max(timeDen, ease(seg(bf, 0.05, 0.45))); // ノイズ→画像
+    const lat = ease(seg(bf, 0.42, 0.92)); // 画像→潜在
+    const prm = inAt(bf, 2); // プロンプト注入
+    const vid = inAt(bf, 3); // 潜在→動画フレーム
 
     const pos = this.posAttr.array;
     const col = this.colAttr.array;

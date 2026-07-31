@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp, rng } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, rng, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
 const SEQ = ['The', 'cat', 'sat', 'on', 'the', 'mat', 'and', 'slept'];
@@ -294,8 +294,8 @@ export default class AttentionScene extends BaseScene {
     // ビート0では、スクロールを止めていても「逐次 → 全結合」の切り替わりが繰り返し見えるよう
     // 時間でも回す。スクロールを進めれば全結合側に固定される。
     const cyc = (time % 9) / 9;
-    const attn = Math.max(ease(clamp((cyc - 0.34) / 0.22)), ease(seg(bf, 0.35, 0.8)));
-    const out0 = ease(seg(bf, 0.78, 1.0));
+    const attn = Math.max(ease(clamp((cyc - 0.34) / 0.22)), inAt(bf, 1));
+    const out0 = outAt(bf, 1);
 
     const seqA = 1 - out0;
     this.gSeq.visible = seqA > 0.02;
@@ -323,8 +323,8 @@ export default class AttentionScene extends BaseScene {
     }
 
     // ── ビート1：Q・K・V
-    const qkvIn = ease(seg(bf, 0.55, 0.95));
-    const qkvOut = ease(seg(bf, 1.72, 2.0));
+    const qkvIn = inAt(bf, 1);
+    const qkvOut = outAt(bf, 2);
     this.gQKV.visible = bf > 0.8 && bf < 2.05;
     if (this.gQKV.visible) {
       const a = qkvIn * (1 - qkvOut);
@@ -344,8 +344,8 @@ export default class AttentionScene extends BaseScene {
     }
 
     // ── ビート2：層のスタック
-    const stIn = ease(seg(bf, 1.55, 1.95));
-    const stOut = ease(seg(bf, 2.7, 3.0));
+    const stIn = inAt(bf, 2);
+    const stOut = outAt(bf, 3);
     this.gStack.visible = bf > 1.75 && bf < 3.05;
     if (this.gStack.visible) {
       const a = stIn * (1 - stOut);
@@ -367,7 +367,7 @@ export default class AttentionScene extends BaseScene {
     }
 
     // ── ビート3：自己回帰生成
-    const genIn = ease(seg(bf, 2.55, 2.95));
+    const genIn = inAt(bf, 3);
     this.gGen.visible = bf > 2.7;
     if (this.gGen.visible) {
       const cycle = 4.2;

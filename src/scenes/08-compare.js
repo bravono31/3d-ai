@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp, rng } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, rng, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
 const COLS = [
@@ -173,9 +173,9 @@ export default class CompareScene extends BaseScene {
 
   update(p, bf, dt, time) {
     const rise = easeOut(this.enter(dt));
-    const bench = ease(seg(bf, 0.6, 1.0));
-    const benchOut = ease(seg(bf, 1.5, 1.8));
-    const pick = ease(seg(bf, 1.6, 2.0));
+    const bench = inAt(bf, 1);
+    const benchOut = outAt(bf, 2);
+    const pick = inAt(bf, 2);
 
     const shuffling = bench * (1 - benchOut);
     // 順位をぐるぐる入れ替える（1.6秒ごとに巡回）

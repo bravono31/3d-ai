@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp, rng } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, rng, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
 const HELIX_N = 180;
@@ -198,8 +198,8 @@ export default class UsesScene extends BaseScene {
 
   update(p, bf, dt, time) {
     const sci = easeOut(this.enter(dt));
-    const mil = ease(seg(bf, 0.6, 1.0));
-    const dual = ease(seg(bf, 1.7, 2.0));
+    const mil = inAt(bf, 1);
+    const dual = inAt(bf, 2);
 
     // 中央のコア
     this.core.material.opacity = 0.35 + dual * 0.6;

@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
 const STATIONS = ['計画', '調査', '編集', '実行', '検証', '修正'];
@@ -205,9 +205,9 @@ export default class AgentsScene extends BaseScene {
 
   update(p, bf, dt, time) {
     const intro = easeOut(this.enter(dt));
-    const split = ease(seg(bf, 0.6, 1.0)); // 右にループが出る
-    const same = ease(seg(bf, 1.6, 2.0)); // 同じモデル・違う器
-    const use = ease(seg(bf, 2.7, 3.0)); // 使い分け
+    const split = inAt(bf, 1); // 右にループが出る
+    const same = inAt(bf, 2); // 同じモデル・違う器
+    const use = inAt(bf, 3); // 使い分け
 
     // ── チャット側
     this.chat.position.x = lerp(0, -3.6, split);

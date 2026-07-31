@@ -9,6 +9,20 @@ export const seg = (p, a, b) => clamp((p - a) / (b - a));
 export const ease = (t) => t * t * (3 - 2 * t);
 export const easeOut = (t) => 1 - Math.pow(1 - t, 3);
 
+/**
+ * ビート間の演出区間。
+ *
+ * 演出を各カードの手前に押し込むと、スクロールしても何も動かない区間ができ、
+ * そのあと一気に進む。ホイールで読むと「止まった／行きすぎた」と感じる原因になる。
+ * そこで、ビート k-1 から k へ移動する区間のほぼ全体を使って動かし、
+ * カードに着いた直後にだけ短い静止をつくる。
+ *
+ * inAt(k)  : ビート k の内容が入ってくる（k-0.08 で完了）
+ * outAt(k) : ビート k-1 の内容が退く（少し先行して抜ける）
+ */
+export const inAt = (bf, k) => ease(seg(bf, k - 0.7, k - 0.08));
+export const outAt = (bf, k) => ease(seg(bf, k - 0.85, k - 0.25));
+
 /** 決定論的な擬似乱数（スクロールを戻しても同じ絵になるように） */
 export function rng(seed) {
   let s = seed >>> 0;

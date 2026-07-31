@@ -40,6 +40,28 @@ export class SceneManager {
     }
   }
 
+  /**
+   * 空き時間を使って全章のシーンを先に組み立てる。
+   * 初回の build() はジオメトリ生成と文字テクスチャの焼き込みで数十msかかるため、
+   * スクロール中に走らせるとそこで1フレーム固まる。
+   */
+  prebuildAll() {
+    const idle =
+      window.requestIdleCallback ||
+      ((fn) => setTimeout(() => fn({ timeRemaining: () => 8 }), 60));
+
+    let i = 0;
+    const step = (deadline) => {
+      // 1回のアイドルにつき、残り時間がある間だけ組み立てる
+      while (i < this.factories.length && deadline.timeRemaining() > 6) {
+        if (!this.instances[i]) this.ensure(i);
+        i++;
+      }
+      if (i < this.factories.length) idle(step);
+    };
+    idle(step);
+  }
+
   resize(w, h, shift) {
     this.ctx.width = w;
     this.ctx.height = h;

@@ -84,12 +84,12 @@ body {
   z-index: 40;
   background: rgba(120, 150, 210, 0.14);
 }
+/* 幅は毎フレームJSが書くので、transition を付けると追従が遅れて引っかかる */
 #progress i {
   display: block;
   height: 100%;
   width: 0;
   background: linear-gradient(90deg, var(--accent), var(--accent2));
-  transition: width 0.1s linear;
 }
 
 /* ───────────────────────── 右上のトグル */
@@ -465,7 +465,8 @@ body {
   box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
   opacity: calc(0.1 + 0.9 * var(--vis));
   transform: translateY(var(--shift));
-  transition: opacity 0.12s linear;
+  /* --vis はスクロール側で減衰済み。ここで transition を重ねると二重にかかって鈍る */
+  will-change: opacity, transform;
 }
 
 .card-meta {
@@ -618,8 +619,8 @@ html[data-mode="deep"] .beat-body strong {
   html {
     scroll-behavior: auto;
   }
-  .card,
   #fade {
     transition: none;
+    animation: none;
   }
 }

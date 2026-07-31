@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
 const SLOTS = ['重み', '学習コード', '学習データ'];
@@ -256,10 +256,10 @@ export default class OpennessScene extends BaseScene {
 
   update(p, bf, dt, time) {
     const build = easeOut(this.enter(dt));
-    const pros = ease(seg(bf, 0.6, 1.0)) * (1 - ease(seg(bf, 1.75, 2.0)));
-    const tierOut = ease(seg(bf, 1.8, 2.05));
-    const debate = ease(seg(bf, 1.65, 2.0)) * (1 - ease(seg(bf, 2.65, 2.9)));
-    const mix = ease(seg(bf, 2.7, 3.0));
+    const pros = inAt(bf, 1) * (1 - outAt(bf, 2));
+    const tierOut = outAt(bf, 2);
+    const debate = inAt(bf, 2) * (1 - outAt(bf, 3));
+    const mix = inAt(bf, 3);
 
     // ── 3段階
     this.root.children.forEach(() => {});

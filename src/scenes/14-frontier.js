@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp, rng } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, rng, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
 const SIGNERS = 1200;
@@ -279,14 +279,14 @@ export default class FrontierScene extends BaseScene {
     const grow = easeOut(this.enter(dt));
     // 署名の集まりも時間で立ち上げる（ビート0はスクロールが止まっているため）
     const sign = easeOut(clamp(grow * 1.7 - 0.6));
-    const tl = ease(seg(bf, 0.6, 1.0)) * (1 - ease(seg(bf, 1.75, 2.0)));
-    const df = ease(seg(bf, 1.6, 2.0)) * (1 - ease(seg(bf, 2.68, 2.9)));
-    const rg = ease(seg(bf, 2.7, 3.0));
+    const tl = inAt(bf, 1) * (1 - outAt(bf, 2));
+    const df = inAt(bf, 2) * (1 - outAt(bf, 3));
+    const rg = inAt(bf, 3);
 
     // ── 曲線と署名
     this.gCurve.visible = bf < 1.05;
     if (this.gCurve.visible) {
-      const a = 1 - ease(seg(bf, 0.75, 1.0));
+      const a = 1 - outAt(bf, 1);
       this.curve.geometry.setDrawRange(0, Math.max(2, Math.floor(this.curvePts.length * grow)));
       this.curve.material.opacity = a * 0.95;
       this.axes.material.opacity = a * 0.6;
