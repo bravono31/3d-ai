@@ -454,7 +454,7 @@ body {
 
 .card {
   /* 位置・濃さ・拡大率は scroll.js が毎フレーム書く（下から入り→静止→上へ抜ける） */
-  --card-y: 46px;
+  --card-y: 0px;
   --card-o: 0;
   --card-s: 0.985;
   pointer-events: auto;

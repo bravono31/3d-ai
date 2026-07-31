@@ -8,41 +8,54 @@ const DAMP = 11;
 /** これ以上離れていたら補間せず飛ぶ（章ナビでのジャンプなど） */
 const SNAP_GAP = 1.3;
 
-// ── 解説カードの動き（単位は画面高さ）
-const ENTER = 0.92; // この距離まで近づいたら下から入り始める
-const HOLD_IN = 0.1; // ここまで上がったら静止に入る
-const HOLD_OUT = 0.16; // ここを過ぎたら退場を始める
-const EXIT = 0.88; // ここまでで消えきる
-const ENTER_Y = 46; // 入りの持ち上げ量(px)
-const EXIT_Y = 60; // 抜けの持ち上げ量(px)
+// ── 解説カードの動き（単位はすべて画面高さ）
+const READ = 0.48; // 読ませる位置（画面の上寄り）
+const APPEAR = 0.85; // ここから濃くなり始める
+const ENTER = 0.55; // ここから減速して定位置へ寄せる
+const HOLD_IN = 0.1; // ここから静止
+const HOLD_OUT = 0.16; // ここまで静止
+const EXIT = 0.85; // ここまでで消えきる
+const EXIT_RISE = 0.62; // 抜けるときに上がる量
 
 /**
  * カードの位置と濃さ。t は「読んでいる位置」から見た相対位置（画面高さ単位）。
  * t < 0 … まだ下にいる / t > 0 … 通り過ぎた
  *
- * 下からふわっと上がってきて、読む位置で減速して一瞬止まり、
- * 最後は加速しながら上へ抜けて消える。
+ * 大事なのは、カードは何もしなくてもスクロールと一緒に画面を上がっていくこと。
+ * 「止める」には、その分を transform で打ち消して画面上の位置を固定する必要がある。
+ * そこで扱う値を「画面上のどこに見せたいか（screen）」に統一し、
+ * 自然位置との差を translateY として出す。
+ *
+ *   下から上がる → 減速して定位置へ → 画面に固定して静止 → ふわっと上へ抜ける
  */
-function cardState(t) {
-  if (t < -ENTER || t > EXIT) return null; // 画面外
+function cardState(t, vh) {
+  if (t < -APPEAR || t > EXIT) return null; // 画面外
 
-  if (t < -HOLD_IN) {
+  const natural = READ - t; // 何もしなければ居る位置
+  let screen;
+  let scale;
+
+  if (t < -ENTER) {
+    screen = natural; // まだ普通に流れてくる
+    scale = 0.985;
+  } else if (t < -HOLD_IN) {
     const u = (t + ENTER) / (ENTER - HOLD_IN); // 0→1
-    return {
-      y: ENTER_Y * (1 - easeOut(u)), // 減速しながら定位置へ
-      o: ease(clamp((u - 0.12) / 0.88)), // 少し遅れて濃くなる
-      s: 0.985 + 0.015 * easeOut(u),
-    };
+    const w = easeOut(u); // 減速しながら
+    screen = natural + (READ - natural) * w;
+    scale = 0.985 + 0.015 * w;
+  } else if (t <= HOLD_OUT) {
+    screen = READ; // 画面上で完全に静止
+    scale = 1;
+  } else {
+    const v = (t - HOLD_OUT) / (EXIT - HOLD_OUT); // 0→1
+    screen = READ - EXIT_RISE * easeIn(v); // ゆっくり離れ、加速して上へ
+    scale = 1 + 0.02 * easeIn(v);
   }
 
-  if (t <= HOLD_OUT) return { y: 0, o: 1, s: 1 }; // 読ませるための静止
+  const fadeIn = ease(clamp((t + APPEAR) / 0.4));
+  const fadeOut = t <= HOLD_OUT ? 0 : ease(clamp((t - HOLD_OUT) / (EXIT - HOLD_OUT) / 0.9));
 
-  const v = (t - HOLD_OUT) / (EXIT - HOLD_OUT); // 0→1
-  return {
-    y: -EXIT_Y * easeIn(v), // ゆっくり離れ、加速して抜ける
-    o: 1 - ease(clamp(v / 0.9)),
-    s: 1 + 0.02 * easeIn(v),
-  };
+  return { y: (screen - natural) * vh, o: fadeIn * (1 - fadeOut), s: scale };
 }
 
 /**
@@ -92,7 +105,7 @@ export class ScrollTracker {
     for (let c = Math.max(0, ci - 1); c <= Math.min(this.layout.length - 1, ci + 1); c++) {
       for (const b of this.layout[c].beats) {
         const t = (focus - b.center) / vh;
-        const st = cardState(t);
+        const st = cardState(t, vh);
         const ref = b.ref;
 
         if (!st) {
