@@ -2,8 +2,14 @@ import * as THREE from 'three';
 import { BaseScene, seg, ease, easeOut, lerp, clamp, rng, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
-const BOOKS = 64;
+const BOOKS = 34;
 const DATA_PTS = 2600;
+
+/** 装丁らしい色。ランダムなHSLより、実在の本の色を並べたほうが本に見える。 */
+const COVERS = [
+  0x7a3b2e, 0x2f4858, 0x3d5a45, 0x6b4a2f, 0x8a6d3b,
+  0x4a3a5c, 0x7d3f4f, 0x2e4a5e, 0x5c4632, 0x35563f,
+];
 
 export default class ConflictsScene extends BaseScene {
   build() {
@@ -14,27 +20,71 @@ export default class ConflictsScene extends BaseScene {
     this.gScan = new THREE.Group();
     this.root.add(this.gScan);
 
-    const bookGeo = new THREE.BoxGeometry(0.07, 0.92, 0.64);
-    this.books = new THREE.InstancedMesh(
-      bookGeo,
-      new THREE.MeshBasicMaterial({ transparent: true }),
-      BOOKS
+    /*
+     * 本は「表紙・小口（ページ束）・背表紙・箔押しの帯」の4部品で組む。
+     * 1枚の板だと、カメラが -Z を向いている都合で小口側から見た薄い棒にしか見えない。
+     * 表紙をカメラへ向け、Y軸に少し振って右側の小口を覗かせると本らしくなる。
+     */
+    const part = (geo, mat) => {
+      const m = new THREE.InstancedMesh(geo, mat, BOOKS);
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.gScan.add(m);
+      return m;
+    };
+    // 本だけは陰影をつける。無光源だと箱の6面が同じ色になり、立体に見えない。
+    this.scene.add(new THREE.AmbientLight(0xffffff, 1.15));
+    const key = new THREE.DirectionalLight(0xfff2e0, 1.6);
+    key.position.set(-2.5, 3, 4);
+    this.scene.add(key);
+    const fill = new THREE.DirectionalLight(0x8fb4ff, 0.5);
+    fill.position.set(3, -1, 2);
+    this.scene.add(fill);
+
+    const lit = (color) => new THREE.MeshLambertMaterial({ color, transparent: true });
+
+    this.bookCover = part(new THREE.BoxGeometry(0.56, 0.8, 0.12), lit(0xffffff));
+    this.bookPages = part(new THREE.BoxGeometry(0.54, 0.74, 0.1), lit(0xe8e0cb));
+    this.bookSpine = part(new THREE.BoxGeometry(0.05, 0.84, 0.135), lit(0xffffff));
+    this.bookTitle = part(
+      new THREE.BoxGeometry(0.28, 0.05, 0.004),
+      new THREE.MeshBasicMaterial({ color: 0xd8c48a, transparent: true })
     );
-    this.books.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(BOOKS * 3), 3);
+
+    // 表紙と背表紙は本ごとに色を変える（背表紙は表紙より暗く）
+    for (const m of [this.bookCover, this.bookSpine]) {
+      m.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(BOOKS * 3), 3);
+    }
     const c = new THREE.Color();
     this.bookSeed = [];
     for (let i = 0; i < BOOKS; i++) {
-      c.setHSL(0.06 + rand() * 0.12, 0.35 + rand() * 0.3, 0.32 + rand() * 0.22);
-      this.books.setColorAt(i, c);
+      const base = COVERS[Math.floor(rand() * COVERS.length)];
+      c.setHex(base).offsetHSL(0, 0, (rand() - 0.5) * 0.06);
+      this.bookCover.setColorAt(i, c);
+      this.bookSpine.setColorAt(i, c.clone().multiplyScalar(0.62));
       this.bookSeed.push({
         t: rand(),
-        y: (rand() - 0.5) * 1.5,
-        z: (rand() - 0.5) * 1.2,
-        rz: (rand() - 0.5) * 0.25,
+        y: (rand() - 0.5) * 2.3,
+        z: (rand() - 0.5) * 2.0,
+        rz: (rand() - 0.5) * 0.3,
+        ry: -0.2 - rand() * 0.25, // 右の小口が見える向きへ振る
+        s: 0.86 + rand() * 0.3, // 判型のばらつき
       });
     }
-    this.books.instanceColor.needsUpdate = true;
-    this.gScan.add(this.books);
+    this.bookCover.instanceColor.needsUpdate = true;
+    this.bookSpine.instanceColor.needsUpdate = true;
+
+    // 部品ごとの、本のローカル座標での位置
+    this.bookParts = [
+      { mesh: this.bookCover, off: new THREE.Vector3(0, 0, 0) },
+      { mesh: this.bookPages, off: new THREE.Vector3(0.03, 0, 0) }, // 右へずらして小口を出す
+      { mesh: this.bookTitle, off: new THREE.Vector3(0, 0.17, 0.062) },
+    ];
+    this._m = new THREE.Matrix4();
+    this._local = new THREE.Matrix4();
+    this._q = new THREE.Quaternion();
+    this._e = new THREE.Euler();
+    this._v = new THREE.Vector3();
+    this._s = new THREE.Vector3();
 
     // 裁断・スキャン面
     const blade = new THREE.Mesh(
@@ -282,24 +332,44 @@ export default class ConflictsScene extends BaseScene {
     this.gScan.visible = bf < 1.05;
     if (this.gScan.visible) {
       const a = scan * (1 - scanOut);
-      const m = new THREE.Matrix4();
-      const q = new THREE.Quaternion();
-      const v = new THREE.Vector3();
-      const s = new THREE.Vector3(1, 1, 1);
+      const m = this._m;
+      const local = this._local;
+      const q = this._q;
+      const e = this._e;
+      const v = this._v;
+      const s = this._s;
+
       for (let i = 0; i < BOOKS; i++) {
         const sd = this.bookSeed[i];
         const t = (sd.t + time * 0.09) % 1;
-        // 0→0.55 で刃へ向かい、そこから先は消える
-        const x = lerp(-5.4, 0, Math.min(1, t / 0.55));
-        const cut = clamp((t - 0.55) / 0.12);
+        // 刃を通り抜けながら読み取られていく。刃の位置で止めると本が団子になる。
+        const x = lerp(-5.6, 0.62, t);
+        const cut = clamp(x / 0.5);
+
+        // 本体：スキャナに送り込まれ、幅を失いながら消える
         v.set(x, sd.y, sd.z);
-        q.setFromEuler(new THREE.Euler(0, 0, sd.rz + cut * 0.5));
-        s.set(1, 1 - cut, 1 - cut * 0.6);
+        e.set(0, sd.ry, sd.rz);
+        q.setFromEuler(e);
+        s.set(sd.s * (1 - cut), sd.s, sd.s);
         m.compose(v, q, s);
-        this.books.setMatrixAt(i, m);
+        for (const pt of this.bookParts) {
+          local.makeTranslation(pt.off.x, pt.off.y, pt.off.z);
+          pt.mesh.setMatrixAt(i, local.premultiply(m));
+        }
+
+        // 背表紙：切り落とされて、回りながら落ちていく
+        v.set(x - cut * 0.55, sd.y - cut * cut * 1.5, sd.z + cut * 0.2);
+        e.set(0, sd.ry, sd.rz - cut * 2.4);
+        q.setFromEuler(e);
+        s.setScalar(sd.s * (1 - clamp((cut - 0.45) / 0.55)));
+        m.compose(v, q, s);
+        local.makeTranslation(-0.285, 0, 0);
+        this.bookSpine.setMatrixAt(i, local.premultiply(m));
       }
-      this.books.instanceMatrix.needsUpdate = true;
-      this.books.material.opacity = a;
+      for (const mesh of [this.bookCover, this.bookPages, this.bookTitle, this.bookSpine]) {
+        mesh.instanceMatrix.needsUpdate = true;
+        mesh.material.opacity = a;
+      }
 
       const flash = 0.55 + Math.sin(time * 9) * 0.45;
       this.blade.material.opacity = a * (0.5 + flash * 0.5);

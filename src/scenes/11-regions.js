@@ -134,20 +134,35 @@ export default class RegionsScene extends BaseScene {
       tag.position.set(0, 2.0, 0);
       g.add(tag);
 
-      // 指標のバー
+      // 指標のバー。
+      // パネルは全地域が同じ位置に重なるので、板の深度を書かせると
+      // 切り替え中に同一平面どうしが取り合いになってチラつく。
+      // 深度は書かず、描画順だけで前後を決める。
       const bars = rg.metrics.map((m, i) => {
         const y = 1.35 - i * 0.62;
         const track = new THREE.Mesh(
           new THREE.PlaneGeometry(2.6, 0.11),
-          new THREE.MeshBasicMaterial({ color: 0x24344f, transparent: true })
+          new THREE.MeshBasicMaterial({
+            color: 0x24344f,
+            transparent: true,
+            depthWrite: false,
+            depthTest: false,
+          })
         );
         track.position.set(1.3, y - 0.2, 0);
+        track.renderOrder = 20;
         g.add(track);
         const fill = new THREE.Mesh(
           new THREE.PlaneGeometry(1, 0.11),
-          new THREE.MeshBasicMaterial({ color: rg.color, transparent: true })
+          new THREE.MeshBasicMaterial({
+            color: rg.color,
+            transparent: true,
+            depthWrite: false,
+            depthTest: false,
+          })
         );
         fill.position.set(0, y - 0.2, 0.01);
+        fill.renderOrder = 21;
         g.add(fill);
         const lb = makeLabel(m.k, { fontSize: 26, height: 0.22, color: '#9fb0d0', weight: 600 });
         lb.center.set(0, 0.5);
@@ -202,9 +217,15 @@ export default class RegionsScene extends BaseScene {
     this.globe.rotation.set(lat * DEG, (-90 - lon) * DEG, 0);
     this.globe.rotation.y += Math.sin(time * 0.09) * 0.03;
 
+    // 切り替えは移動の全域を使わず、前半で退いて後半で入る。
+    // 全域でクロスフェードすると二重像が長く残り、色が混ざって見える。
+    const outA = ease(clamp((f - 0.12) / 0.33)); // 0.12→0.45 で前の地域が退く
+    const inB = ease(clamp((f - 0.4) / 0.32)); // 0.40→0.72 で次の地域に入れ替わる
+    const onOf = (i) => (i === i0 ? 1 - outA : i === i1 && i1 !== i0 ? inB : 0);
+
     // マーカーの強調
     this.markers.forEach((mk, i) => {
-      const on = i === i0 ? 1 - f : i === i1 ? f : 0;
+      const on = onOf(i);
       const pulse = 0.55 + Math.sin(time * 2.2) * 0.25;
       mk.dots.forEach((o) => {
         o.d.material.opacity = 0.35 + on * 0.65;
@@ -216,17 +237,18 @@ export default class RegionsScene extends BaseScene {
       });
     });
 
-    // パネルの切り替え（クロスフェード）
+    // パネルの切り替え
     this.panels.forEach((pn, i) => {
-      const on = i === i0 ? 1 - f : i === i1 ? f : 0;
-      pn.g.visible = on > 0.01;
+      const e = onOf(i);
+      pn.g.visible = e > 0.004;
       if (!pn.g.visible) return;
-      const e = ease(on);
+      // 入ってくる側だけを滑り込ませる。退く側も動かすと二重に流れて読みにくい。
+      const entering = i === i1 && i1 !== i0;
       pn.title.material.opacity = e;
       pn.tag.material.opacity = e;
       pn.players.material.opacity = e * 0.95;
       if (pn.note) pn.note.material.opacity = e;
-      pn.g.position.x = PANEL_X + (1 - e) * 0.5;
+      pn.g.position.x = PANEL_X + (entering ? (1 - e) * 0.45 : 0);
       pn.bars.forEach((br, k) => {
         const grow = clamp(e * 2.2 - k * 0.25);
         br.track.material.opacity = e * 0.7;
