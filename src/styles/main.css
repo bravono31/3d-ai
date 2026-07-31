@@ -444,21 +444,27 @@ body {
 .chapter {
   position: relative;
 }
+/* ビートはスクロール量を確保するための空間。カードは fixed なのでここには載らない */
 .beat {
   min-height: 100svh;
-  display: flex;
-  align-items: center;
-  padding: 8vh 6vw;
   pointer-events: none;
 }
 
+/*
+ * カードは position:fixed にして、位置を完全に scroll.js の管理下に置く。
+ * 通常フローのままだと、土台をブラウザがスクロールで動かし、
+ * それを打ち消す量をJSが書くことになり、両者がずれて静止中に震える。
+ */
 .card {
-  /* 位置・濃さ・拡大率は scroll.js が毎フレーム書く（下から入り→静止→上へ抜ける） */
-  --card-y: 0px;
+  --card-y: 100vh;
   --card-o: 0;
   --card-s: 0.985;
-  pointer-events: auto;
-  width: min(480px, 100%);
+  position: fixed;
+  top: 0;
+  left: 6vw;
+  z-index: 12;
+  pointer-events: none;
+  width: min(480px, calc(100vw - 12vw));
   padding: 26px 30px 30px;
   border-radius: 18px;
   background: var(--card-bg);
@@ -467,9 +473,13 @@ body {
   box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
   opacity: var(--card-o);
   transform: translate3d(0, var(--card-y), 0) scale(var(--card-s));
-  transform-origin: 50% 65%;
+  transform-origin: 50% 60%;
   /* 値は毎フレームJSが書くので、transition を重ねると二重にかかって鈍る */
   will-change: opacity, transform;
+}
+/* 読んでいるカードだけ、文字を選べるようにする */
+.card.is-active {
+  pointer-events: auto;
 }
 
 .card-meta {
@@ -588,12 +598,9 @@ html[data-mode="deep"] .beat-body strong {
     background: linear-gradient(180deg, rgba(7, 10, 20, 0.3) 0%, rgba(7, 10, 20, 0.78) 60%);
   }
   .card {
-    width: 100%;
+    left: 5vw;
+    width: calc(100vw - 10vw);
     padding: 22px 20px 24px;
-  }
-  .beat {
-    padding: 6vh 5vw;
-    align-items: flex-end;
   }
   #chapnav {
     display: none;

@@ -8,54 +8,58 @@ const DAMP = 11;
 /** これ以上離れていたら補間せず飛ぶ（章ナビでのジャンプなど） */
 const SNAP_GAP = 1.3;
 
-// ── 解説カードの動き（単位はすべて画面高さ）
-const READ = 0.48; // 読ませる位置（画面の上寄り）
+// ── 解説カードの動き（位置の単位は画面高さ、1.0 = 画面の高さ）
+const READ_WIDE = 0.38; // 止める位置。上端に消える少し手前
+const READ_NARROW = 0.6; // 画面が狭いときは下寄りにして3Dの邪魔をしない
 const APPEAR = 0.85; // ここから濃くなり始める
 const ENTER = 0.55; // ここから減速して定位置へ寄せる
 const HOLD_IN = 0.1; // ここから静止
 const HOLD_OUT = 0.16; // ここまで静止
 const EXIT = 0.85; // ここまでで消えきる
-const EXIT_RISE = 0.62; // 抜けるときに上がる量
+const EXIT_RISE = 0.78; // 抜けるときに上がる量（上端を完全に抜ける）
 
 /**
- * カードの位置と濃さ。t は「読んでいる位置」から見た相対位置（画面高さ単位）。
- * t < 0 … まだ下にいる / t > 0 … 通り過ぎた
+ * カードの「画面上での中心Y」と濃さ。
+ * t は読ませる位置から見た相対位置（画面高さ単位）。t<0 … まだ下 / t>0 … 通り過ぎた
  *
- * 大事なのは、カードは何もしなくてもスクロールと一緒に画面を上がっていくこと。
- * 「止める」には、その分を transform で打ち消して画面上の位置を固定する必要がある。
- * そこで扱う値を「画面上のどこに見せたいか（screen）」に統一し、
- * 自然位置との差を translateY として出す。
+ * カードは position:fixed にしてあり、ブラウザのスクロールでは一切動かない。
+ * 位置はすべてここで決める。こうしないと「静止」を作れない——
+ * 通常フローのままスクロール量を transform で打ち消す方式だと、
+ * 土台をコンポジタが動かし打ち消し量をJSが書くため両者がずれ、
+ * 勢いをつけたときに毎フレーム震える。
  *
- *   下から上がる → 減速して定位置へ → 画面に固定して静止 → ふわっと上へ抜ける
+ *   下から上がる → 減速して定位置へ → 完全に静止 → 上へ抜けながら薄れる
  */
-function cardState(t, vh) {
+function cardState(t, read) {
   if (t < -APPEAR || t > EXIT) return null; // 画面外
 
-  const natural = READ - t; // 何もしなければ居る位置
-  let screen;
+  const flowing = read - t; // 普通に流れていたら居る位置
+  let center;
   let scale;
 
   if (t < -ENTER) {
-    screen = natural; // まだ普通に流れてくる
+    center = flowing; // まだ普通に流れてくる
     scale = 0.985;
   } else if (t < -HOLD_IN) {
     const u = (t + ENTER) / (ENTER - HOLD_IN); // 0→1
     const w = easeOut(u); // 減速しながら
-    screen = natural + (READ - natural) * w;
+    center = flowing + (read - flowing) * w;
     scale = 0.985 + 0.015 * w;
   } else if (t <= HOLD_OUT) {
-    screen = READ; // 画面上で完全に静止
+    center = read; // 完全に静止
     scale = 1;
   } else {
     const v = (t - HOLD_OUT) / (EXIT - HOLD_OUT); // 0→1
-    screen = READ - EXIT_RISE * easeIn(v); // ゆっくり離れ、加速して上へ
-    scale = 1 + 0.02 * easeIn(v);
+    center = read - EXIT_RISE * ease(v); // 動き出してから上へ抜ける
+    scale = 1 + 0.03 * ease(v);
   }
 
-  const fadeIn = ease(clamp((t + APPEAR) / 0.4));
-  const fadeOut = t <= HOLD_OUT ? 0 : ease(clamp((t - HOLD_OUT) / (EXIT - HOLD_OUT) / 0.9));
+  const fadeIn = ease(clamp((t + APPEAR) / 0.42));
+  // 消えるのは動きより後ろ。先に薄くなると「その場で消えた」ように見える
+  const v = t <= HOLD_OUT ? 0 : (t - HOLD_OUT) / (EXIT - HOLD_OUT);
+  const fadeOut = ease(clamp((v - 0.3) / 0.62));
 
-  return { y: (screen - natural) * vh, o: fadeIn * (1 - fadeOut), s: scale };
+  return { center, o: fadeIn * (1 - fadeOut), s: scale };
 }
 
 /**
@@ -79,9 +83,11 @@ export class ScrollTracker {
     this.refresh();
 
     // 章やカードの高さが変わったら測り直す（リサイズ・モード切替・フォント読み込み）
+    // カードは fixed で章の高さに影響しないため、カード自身も見張る
     if (typeof ResizeObserver !== 'undefined') {
       this._ro = new ResizeObserver(() => this.refresh());
       chapterEls.forEach((el) => this._ro.observe(el));
+      beatRefs.forEach((b) => this._ro.observe(b.card));
     }
     window.addEventListener('resize', () => this.refresh());
   }
@@ -91,13 +97,16 @@ export class ScrollTracker {
     const sy = window.scrollY;
     this.layout = this.chapterEls.map((el, ci) => {
       const r = el.getBoundingClientRect();
-      const beats = this.byChapter[ci].map((b) => {
-        const br = b.el.getBoundingClientRect();
-        return { center: br.top + sy + br.height / 2, ref: b };
-      });
+      const beats = this.byChapter[ci].map((b) => ({
+        center: b.el.getBoundingClientRect().top + sy + b.el.offsetHeight / 2,
+        // カードは fixed なので、自分の高さから中心合わせの分を引く必要がある
+        h: b.card.offsetHeight,
+        ref: b,
+      }));
       return { top: r.top + sy, bottom: r.bottom + sy, beats };
     });
     this.docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    this.read = window.innerWidth >= 900 ? READ_WIDE : READ_NARROW;
   }
 
   /** 前後の章ぶんだけカードを更新する（章をまたぐ瞬間にカードが飛び出さないように） */
@@ -105,7 +114,7 @@ export class ScrollTracker {
     for (let c = Math.max(0, ci - 1); c <= Math.min(this.layout.length - 1, ci + 1); c++) {
       for (const b of this.layout[c].beats) {
         const t = (focus - b.center) / vh;
-        const st = cardState(t, vh);
+        const st = cardState(t, this.read);
         const ref = b.ref;
 
         if (!st) {
@@ -113,18 +122,20 @@ export class ScrollTracker {
             ref._on = false;
             ref.card.style.setProperty('--card-o', '0');
             ref.card.classList.remove('is-active');
+            ref._active = false;
           }
           continue;
         }
 
         ref._on = true;
+        const y = st.center * vh - b.h / 2;
         // ほとんど変わらないときは触らない（毎フレームのスタイル再計算を避ける）
-        if (Math.abs((ref._o ?? -1) - st.o) > 0.004 || Math.abs((ref._y ?? 1e9) - st.y) > 0.3) {
+        if (Math.abs((ref._o ?? -1) - st.o) > 0.004 || Math.abs((ref._y ?? 1e9) - y) > 0.25) {
           ref._o = st.o;
-          ref._y = st.y;
+          ref._y = y;
           const s = ref.card.style;
           s.setProperty('--card-o', st.o.toFixed(3));
-          s.setProperty('--card-y', st.y.toFixed(1) + 'px');
+          s.setProperty('--card-y', y.toFixed(1) + 'px');
           s.setProperty('--card-s', st.s.toFixed(4));
         }
         const active = t > -0.25 && t < 0.3;
