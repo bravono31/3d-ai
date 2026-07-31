@@ -6,6 +6,38 @@ const SEQ = ['The', 'cat', 'sat', 'on', 'the', 'mat', 'and', 'slept'];
 const N = SEQ.length;
 const LAYERS = 12;
 
+/** 具体例のトークン列の配置（build と update の両方で使う） */
+const TOK_Y = 2.95;
+const TOK_X = (i) => -3.25 + i * 0.94;
+
+/**
+ * Q・K・V の具体例。q が「いま処理しているトークン」、k が最も強く見に行く先。
+ * 抽象的な説明だけでは伝わらないので、実際の文でこの3つを名指しする。
+ */
+const EXAMPLES = [
+  {
+    q: 7,
+    k: 1,
+    ask: '「誰が」寝たのか？',
+    answer: '私は cat。動物で、主語になれる',
+    mix: 'cat の中身を最も強く受け取る',
+  },
+  {
+    q: 5,
+    k: 3,
+    ask: '「どこ」に置かれている？',
+    answer: '私は on。場所の関係を示す',
+    mix: 'on の中身を強く受け取る',
+  },
+  {
+    q: 2,
+    k: 1,
+    ask: '「誰が」座ったのか？',
+    answer: '私は cat。動物で、主語になれる',
+    mix: 'cat の中身を最も強く受け取る',
+  },
+];
+
 /** 因果マスク付きの、それらしい注意重み（決定論的に生成する） */
 function attentionWeights() {
   const rand = rng(7);
@@ -13,12 +45,15 @@ function attentionWeights() {
   for (let i = 0; i < N; i++) {
     const row = new Array(N).fill(0);
     for (let j = 0; j <= i; j++) {
-      // 近傍・文頭・特定の長距離ペアを強めにする
-      let v = 0.15 + 0.6 * Math.exp(-(i - j) * 0.7);
-      if (j === 0) v += 0.35;
+      // 近傍・文頭・特定の係り受けを強めにする
+      let v = 0.12 + 0.55 * Math.exp(-(i - j) * 0.6);
+      if (j === 0) v += 0.28; // 文頭はアンカーになりやすい
+      // 自己参照は実際には強く出るが、ここでは「どこを見に行くか」を示す図なので抑える
+      if (j === i) v *= 0.4;
       if (i === 4 && j === 1) v += 0.8; // the → cat（照応）
-      if (i === 7 && j === 1) v += 0.7; // slept → cat（主語）
-      if (i === 5 && j === 3) v += 0.4; // mat → on
+      if (i === 7 && j === 1) v += 0.9; // slept → cat（主語）
+      if (i === 5 && j === 3) v += 0.75; // mat → on（場所）
+      if (i === 2 && j === 1) v += 0.8; // sat → cat（主語）
       row[j] = v * (0.75 + rand() * 0.5);
     }
     const s = row.reduce((a, b) => a + b, 0) || 1;
@@ -134,73 +169,124 @@ export default class AttentionScene extends BaseScene {
     this.gQKV.visible = false;
     this.root.add(this.gQKV);
 
-    const cellGeo = new THREE.PlaneGeometry(0.37, 0.37);
-    this.matCells = new THREE.InstancedMesh(
-      cellGeo,
-      new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide }),
-      N * N
-    );
-    this.matCells.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(N * N * 3), 3);
-    const mm = new THREE.Matrix4();
-    const cc = new THREE.Color();
-    for (let i = 0; i < N; i++) {
-      for (let j = 0; j < N; j++) {
-        const idx = i * N + j;
-        mm.makeTranslation((j - (N - 1) / 2) * 0.42, -(i - (N - 1) / 2) * 0.42, 0);
-        this.matCells.setMatrixAt(idx, mm);
-        const w = this.W[i][j];
-        cc.setHSL(0.5 - w * 0.14, 0.7, 0.06 + Math.min(0.62, w * 1.5));
-        this.matCells.setColorAt(idx, cc);
-      }
-    }
-    this.matCells.instanceMatrix.needsUpdate = true;
-    this.matCells.instanceColor.needsUpdate = true;
-    this.matCells.position.set(2.9, 0.1, 0);
-    this.gQKV.add(this.matCells);
+    // ── 具体例：実際の文の上で「どのトークンがどこを見るか」を示す
+    this.exChips = SEQ.map((w, i) => {
+      const s = makeLabel(w, {
+        fontSize: 38,
+        height: 0.42,
+        color: '#eaf3ff',
+        bg: 'rgba(16,24,42,0.95)',
+        border: 'rgba(120,150,210,0.45)',
+        weight: 700,
+      });
+      s.userData.aspect = s.scale.x / s.scale.y;
+      s.position.set(TOK_X(i), TOK_Y, 0);
+      this.gQKV.add(s);
+      return s;
+    });
 
-    const matTitle = makeLabel('注意の重み  softmax(QKᵀ/√dₖ)', {
-      fontSize: 32,
-      height: 0.26,
+    /*
+     * 注意の強さぶんの光。query から各 key へ、下にたわませて引く。
+     * WebGL では線の太さを変えられないので、帯（薄いメッシュ）にして
+     * 重みの強さを幅で表す。細い線だと強弱がまったく伝わらない。
+     */
+    const SEG = 26;
+    this.exBeams = SEQ.map(() => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute(
+        'position',
+        new THREE.BufferAttribute(new Float32Array((SEG + 1) * 2 * 3), 3)
+      );
+      const idx = [];
+      for (let s = 0; s < SEG; s++) {
+        const a0 = s * 2;
+        idx.push(a0, a0 + 1, a0 + 2, a0 + 1, a0 + 3, a0 + 2);
+      }
+      geo.setIndex(idx);
+      const mesh = new THREE.Mesh(
+        geo,
+        new THREE.MeshBasicMaterial({
+          color: 0x4ecdc4,
+          transparent: true,
+          opacity: 0,
+          side: THREE.DoubleSide,
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        })
+      );
+      this.gQKV.add(mesh);
+      return mesh;
+    });
+    this.BEAM_SEG = SEG;
+
+    this.exQueryTag = makeLabel('いま処理しているトークン', {
+      fontSize: 26,
+      height: 0.22,
+      color: '#ffd166',
+      weight: 700,
+    });
+    this.gQKV.add(this.exQueryTag);
+
+    // Q・K・V を実際のトークンに直接ひも付ける小さな印
+    const badge = (t, hex) => {
+      const s = makeLabel(t, {
+        fontSize: 30,
+        height: 0.3,
+        color: '#0a1018',
+        bg: hex,
+        border: hex,
+        weight: 800,
+      });
+      s.userData.aspect = s.scale.x / s.scale.y;
+      this.gQKV.add(s);
+      return s;
+    };
+    this.exQBadge = badge('Q', '#ffd166');
+    this.exKBadge = badge('K', '#4ecdc4');
+    this.exVBadge = badge('V', '#8ab6ff');
+
+    // ── Q / K / V の3行。抽象の説明に、具体例の一行を並べる
+    const defs = [
+      { t: 'Q', s: '何を探しているか', c: 0xffd166, y: 1.4, key: 'ask' },
+      { t: 'K', s: '自分は何者か', c: 0x4ecdc4, y: 0.3, key: 'answer' },
+      { t: 'V', s: '渡せる中身', c: 0x8ab6ff, y: -0.8, key: 'mix' },
+    ];
+    this.qkvRows = defs.map((d) => {
+      const g = new THREE.Group();
+      g.position.set(0, d.y, 0);
+      const hex = '#' + new THREE.Color(d.c).getHexString();
+
+      const big = makeLabel(d.t, { fontSize: 62, height: 0.52, color: hex, weight: 800 });
+      big.position.set(-3.05, 0, 0);
+      g.add(big);
+
+      const sub = makeLabel(d.s, { fontSize: 26, height: 0.21, color: '#9fb0d0', weight: 600 });
+      sub.center.set(0, 0.5);
+      sub.position.set(-2.6, 0.19, 0);
+      g.add(sub);
+
+      // 例ごとの具体テキストは焼き直せないので、全部作って切り替える
+      const lines = EXAMPLES.map((ex) => {
+        const s = makeLabel(ex[d.key], { fontSize: 29, height: 0.25, color: hex, weight: 700 });
+        s.center.set(0, 0.5);
+        s.position.set(-2.6, -0.21, 0);
+        s.visible = false;
+        g.add(s);
+        return s;
+      });
+
+      this.gQKV.add(g);
+      return { g, big, sub, lines };
+    });
+
+    this.qkvFormula = makeLabel('この光の強さが注意の重み  softmax(QKᵀ/√dₖ)', {
+      fontSize: 27,
+      height: 0.23,
       color: '#9fe8e2',
       weight: 700,
     });
-    matTitle.position.set(2.9, 2.2, 0);
-    this.gQKV.add(matTitle);
-
-    // Q / K / V のプレート
-    this.qkv = [];
-    const defs = [
-      { t: 'Q', s: '何を探しているか', c: 0xffd166, y: 1.55 },
-      { t: 'K', s: '自分は何者か', c: 0x4ecdc4, y: 0.1 },
-      { t: 'V', s: '渡せる中身', c: 0x8ab6ff, y: -1.35 },
-    ];
-    defs.forEach((d) => {
-      const g = new THREE.Group();
-      g.position.set(-1.6, d.y, 0);
-      const plate = new THREE.Mesh(
-        new THREE.PlaneGeometry(2.5, 0.95),
-        new THREE.MeshBasicMaterial({ color: d.c, transparent: true, opacity: 0.12 })
-      );
-      g.add(plate);
-      const edge = new THREE.LineSegments(
-        new THREE.EdgesGeometry(new THREE.PlaneGeometry(2.5, 0.95)),
-        new THREE.LineBasicMaterial({ color: d.c, transparent: true })
-      );
-      g.add(edge);
-      const big = makeLabel(d.t, {
-        fontSize: 60,
-        height: 0.5,
-        color: '#' + new THREE.Color(d.c).getHexString(),
-        weight: 800,
-      });
-      big.position.set(-0.85, 0.05, 0.02);
-      g.add(big);
-      const sub = makeLabel(d.s, { fontSize: 30, height: 0.22, color: '#cfe0f7', weight: 600 });
-      sub.position.set(0.28, 0.02, 0.02);
-      g.add(sub);
-      this.gQKV.add(g);
-      this.qkv.push(g);
-    });
+    this.qkvFormula.position.set(0.4, -1.95, 0);
+    this.gQKV.add(this.qkvFormula);
 
     // ══ グループ2：層の積み重ね
     this.gStack = new THREE.Group();
@@ -328,19 +414,93 @@ export default class AttentionScene extends BaseScene {
     this.gQKV.visible = bf > 0.8 && bf < 2.05;
     if (this.gQKV.visible) {
       const a = qkvIn * (1 - qkvOut);
-      this.gQKV.traverse((o) => {
-        if (o.material && !Array.isArray(o.material)) o.material.opacity = o.material.userData?.base ?? a;
+
+      // 例を順に見せる。切り替えの前後は一度暗くして、読み違えを防ぐ
+      const CYCLE = 6.2;
+      const phase = (time % (CYCLE * EXAMPLES.length)) / CYCLE;
+      const ei = Math.floor(phase) % EXAMPLES.length;
+      const local = phase - Math.floor(phase);
+      const swap = clamp(local / 0.12) * (1 - clamp((local - 0.88) / 0.12));
+      const ex = EXAMPLES[ei];
+      const row = this.W[ex.q];
+      const tokX = TOK_X;
+      const dipOf = (j) => 0.4 + Math.abs(tokX(j) - tokX(ex.q)) * 0.16;
+
+      // トークン列：query を明るく、最も強い key をその次に
+      this.exChips.forEach((s, i) => {
+        const isQ = i === ex.q;
+        const isK = i === ex.k;
+        const lit = isQ ? 1 : isK ? 0.85 : i < ex.q ? 0.5 : 0.18;
+        s.material.opacity = a * lit * (0.35 + swap * 0.65);
+        const h = 0.42 * (isQ ? 1.16 : 1);
+        s.scale.set(h * s.userData.aspect, h, 1);
+        s.position.y = TOK_Y + (isQ ? Math.sin(time * 2.4) * 0.045 : 0);
       });
-      // プレートの塗りは薄めに保つ
-      this.qkv.forEach((g, i) => {
-        g.children[0].material.opacity = a * 0.12;
-        g.children[1].material.opacity = a * 0.8;
-        g.children[2].material.opacity = a;
-        g.children[3].material.opacity = a;
-        g.position.x = lerp(-3.6, -1.6, qkvIn) + Math.sin(time * 0.7 + i) * 0.04;
+
+      // タグは画面外へ出ないよう、端では内側に寄せる
+      this.exQueryTag.material.opacity = a * swap;
+      this.exQueryTag.position.set(clamp(tokX(ex.q), -2.2, 2.2), 3.82, 0);
+
+      // Q は query に、K は最も強い相手に貼る
+      const setBadge = (s, x, y, op) => {
+        s.material.opacity = op;
+        const h = 0.3;
+        s.scale.set(h * s.userData.aspect, h, 1);
+        s.position.set(x, y, 0.08);
+      };
+      setBadge(this.exQBadge, tokX(ex.q), TOK_Y + 0.4, a * swap);
+      setBadge(this.exKBadge, tokX(ex.k), TOK_Y + 0.4, a * swap);
+
+      // V は「中身が key から query へ流れてくる」ことを、光の帯の上を動いて示す
+      const vt = (time % 2.2) / 2.2;
+      const dip = dipOf(ex.k);
+      setBadge(
+        this.exVBadge,
+        lerp(tokX(ex.k), tokX(ex.q), vt),
+        TOK_Y - Math.sin(Math.PI * vt) * dip,
+        a * swap * (0.25 + Math.sin(Math.PI * vt) * 0.75)
+      );
+
+      // 光の帯：query から各 key へ、重みの強さで
+      const pulse = 0.75 + Math.sin(time * 2.6) * 0.25;
+      this.exBeams.forEach((beam, j) => {
+        const w = j <= ex.q ? row[j] : 0;
+        const show = j !== ex.q && w > 0.02;
+        beam.visible = show;
+        if (!show) return;
+        const pos = beam.geometry.attributes.position;
+        const x0 = tokX(ex.q);
+        const x1 = tokX(j);
+        const dip = dipOf(j);
+        // 幅で重みを表す。端は細くして、光が伸びていくように見せる
+        const halfW = 0.012 + w * 0.115;
+        for (let s = 0; s <= this.BEAM_SEG; s++) {
+          const t = s / this.BEAM_SEG;
+          const x = lerp(x0, x1, t);
+          const y = TOK_Y - Math.sin(Math.PI * t) * dip;
+          const taper = Math.sin(Math.PI * t) * 0.7 + 0.3;
+          pos.setXYZ(s * 2, x, y + halfW * taper, 0.05);
+          pos.setXYZ(s * 2 + 1, x, y - halfW * taper, 0.05);
+        }
+        pos.needsUpdate = true;
+        // 最も強い相手だけ脈打たせる
+        const strong = j === ex.k;
+        beam.material.opacity = a * swap * Math.min(1, w * 2.6) * (strong ? pulse : 0.4);
+        beam.material.color.setHex(strong ? 0xffd166 : 0x4ecdc4);
       });
-      this.matCells.material.opacity = a;
-      this.matCells.rotation.y = Math.sin(time * 0.25) * 0.12;
+
+      // Q・K・V の行。具体例の一行だけを出す
+      this.qkvRows.forEach((r, i) => {
+        r.big.material.opacity = a;
+        r.sub.material.opacity = a * 0.85;
+        r.lines.forEach((s, k) => {
+          s.visible = k === ei;
+          if (s.visible) s.material.opacity = a * swap;
+        });
+        r.g.position.x = lerp(-0.9, 0, qkvIn) + Math.sin(time * 0.7 + i) * 0.03;
+      });
+
+      this.qkvFormula.material.opacity = a * 0.9;
     }
 
     // ── ビート2：層のスタック
