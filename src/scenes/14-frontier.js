@@ -264,7 +264,7 @@ export default class FrontierScene extends BaseScene {
     const P_L = 0.62; //  板の長さ
     const P_W = 0.15; //  板の厚み
     const FLOOR_Y = -1.05;
-    const PIV_Y = FLOOR_Y + 0.34; // 支点の高さ
+    const PIV_Y = FLOOR_Y + 0.12; // 支点は床のすぐ上（かかと側）
     this.PED_GEO = { P_L, P_W, FLOOR_Y, PIV_Y };
 
     const pedal = (x, color, ghost) => {
@@ -310,7 +310,7 @@ export default class FrontierScene extends BaseScene {
       const post = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints([
           new THREE.Vector3(0, 0, 0),
-          new THREE.Vector3(0.02, -0.34, 0),
+          new THREE.Vector3(0.02, -0.12, 0),
         ]),
         solidMat(color)
       );
@@ -398,7 +398,7 @@ export default class FrontierScene extends BaseScene {
     this.toolsTag = tag('この2つを国際的に整えるのが要求', GX, -1.78, '#4ecdc4', 19, 800);
 
     // 踏んだ結果がタイヤに出る、という対応だけ短い矢印で示す
-    this.linkAccel = arrow(AX - 0.3, -0.32, CX - 0.88, CY - 0.82, 0x5b9dff);
+    this.linkAccel = arrow(AX + 0.12, 0.06, CX - 0.88, CY - 0.82, 0x5b9dff);
 
     // ══ 署名者（補足）。整列ではなく、かたまりとして置く。
     const N_FIG = 150;
@@ -685,7 +685,12 @@ export default class FrontierScene extends BaseScene {
 
       // ペダル。踏むほどつま先側が下がる。
       const { P_L, P_W, PIV_Y } = this.PED_GEO;
-      const angle = (u) => lerp(-0.32, 0.17, u); // 離した状態 → 踏み込んだ状態
+      /*
+       * 板の向き。先端（つま先側）は、離した状態で北北西 ≒ 112.5°、
+       * 踏みきると西北西 ≒ 157.5°。踏むほど寝て、先端は↙へ振り出される。
+       * ローカルでは -x 向きに板を伸ばしているので、回転量は (向き - 180°)。
+       */
+      const angle = (u) => lerp(-1.178, -0.393, u);
       const aTheta = angle(press);
       const bTheta = angle(brake);
       this.accel.g.rotation.z = aTheta;
@@ -716,7 +721,7 @@ export default class FrontierScene extends BaseScene {
       // 足はアクセルからブレーキへ踏み替える。移る間はいったん持ち上げる。
       const foot = brake > 0 ? 1 : clamp((T - 0.62) / 0.08);
       const { AX, BX } = this.PED;
-      // 板の上面の中ほどに靴を載せる
+      // 靴は板の上面に密着させる。離すと踏んでいるように見えない。
       const ox = -P_L * 0.45;
       const oy = P_W / 2 + 0.015;
       const fx = (bx, th) => bx + ox * Math.cos(th) - oy * Math.sin(th);
@@ -746,8 +751,8 @@ export default class FrontierScene extends BaseScene {
         else if (e >= 1) xOn = Math.floor((e - 1) / 0.25) % 2 === 0 ? 1 : 0;
       }
       this.bigX.position.set(
-        BX + ox * 1.1 * Math.cos(bTheta),
-        PIV_Y + ox * 1.1 * Math.sin(bTheta) + 0.02,
+        BX - P_L * 0.5 * Math.cos(bTheta),
+        PIV_Y - P_L * 0.5 * Math.sin(bTheta) + 0.02,
         0.08
       );
       this.bigXParts.forEach((m) => (m.material.opacity = a * ask * xOn));
