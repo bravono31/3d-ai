@@ -153,13 +153,19 @@ export default class FrontierScene extends BaseScene {
     const CY = 1.9;
     this.CAR = { CX, CY };
     const body = new THREE.Shape();
-    body.moveTo(-1.52, -0.1);
-    body.quadraticCurveTo(-1.58, 0.02, -1.34, 0.07);
-    body.lineTo(-0.74, 0.17);
-    body.quadraticCurveTo(-0.3, 0.23, 0.0, 0.5);
-    body.quadraticCurveTo(0.34, 0.68, 0.86, 0.55);
-    body.quadraticCurveTo(1.3, 0.43, 1.48, 0.08);
-    body.lineTo(1.44, -0.1);
+    // 低い着座。前後のホイールアーチで車輪を抱え込むと、浮いて見えなくなる。
+    body.moveTo(-1.56, -0.2);
+    body.lineTo(-1.24, -0.2);
+    body.absarc(-0.88, -0.2, 0.36, Math.PI, 0, true);
+    body.lineTo(0.5, -0.2);
+    body.absarc(0.9, -0.2, 0.36, Math.PI, 0, true);
+    body.lineTo(1.52, -0.2);
+    body.quadraticCurveTo(1.64, -0.04, 1.56, 0.14);
+    body.quadraticCurveTo(1.3, 0.42, 0.82, 0.56);
+    body.quadraticCurveTo(0.28, 0.7, -0.2, 0.5);
+    body.quadraticCurveTo(-0.62, 0.33, -1.02, 0.24);
+    body.lineTo(-1.4, 0.16);
+    body.quadraticCurveTo(-1.62, 0.08, -1.56, -0.2);
     body.closePath();
     this.carFill = new THREE.Mesh(
       new THREE.ShapeGeometry(body),
@@ -173,7 +179,7 @@ export default class FrontierScene extends BaseScene {
     const glass = [];
     for (let i = 0; i <= 20; i++) {
       const t = i / 20;
-      glass.push(new THREE.Vector3(lerp(-0.55, 1.12, t), lerp(0.17, 0.36, Math.sin(t * Math.PI * 0.6)), 0.01));
+      glass.push(new THREE.Vector3(lerp(-0.3, 1.05, t), lerp(0.26, 0.44, Math.sin(t * Math.PI * 0.75)), 0.01));
     }
     this.carGlass = new THREE.Line(
       new THREE.BufferGeometry().setFromPoints(glass),
@@ -183,7 +189,7 @@ export default class FrontierScene extends BaseScene {
     const lampG = new THREE.BufferGeometry();
     lampG.setAttribute(
       'position',
-      new THREE.Float32BufferAttribute([-1.46, 0.0, 0.02, -1.02, 0.07, 0.02], 3)
+      new THREE.Float32BufferAttribute([-1.52, 0.02, 0.02, -1.16, 0.09, 0.02], 3)
     );
     this.carLamp = new THREE.Line(lampG, solidMat(0xdff6f3));
 
@@ -193,13 +199,13 @@ export default class FrontierScene extends BaseScene {
     this.gVoice.add(this.gCar);
 
     // タイヤ。回転が見えるようスポークを入れる。
-    this.wheels = [-0.86, 0.88].map((wx) => {
+    this.wheels = [-0.88, 0.9].map((wx) => {
       const g = new THREE.Group();
-      g.position.set(wx, -0.28, 0.02);
+      g.position.set(wx, -0.2, 0.02);
       const rimPts = [];
       for (let i = 0; i <= 36; i++) {
         const a = (i / 36) * Math.PI * 2;
-        rimPts.push(new THREE.Vector3(Math.cos(a) * 0.26, Math.sin(a) * 0.26, 0));
+        rimPts.push(new THREE.Vector3(Math.cos(a) * 0.3, Math.sin(a) * 0.3, 0));
       }
       const rim = new THREE.Line(
         new THREE.BufferGeometry().setFromPoints(rimPts),
@@ -209,7 +215,7 @@ export default class FrontierScene extends BaseScene {
       const sp = [];
       for (let k = 0; k < 5; k++) {
         const a = (k / 5) * Math.PI * 2;
-        sp.push(0, 0, 0, Math.cos(a) * 0.23, Math.sin(a) * 0.23, 0);
+        sp.push(0, 0, 0, Math.cos(a) * 0.27, Math.sin(a) * 0.27, 0);
       }
       const spG = new THREE.BufferGeometry();
       spG.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
@@ -219,7 +225,7 @@ export default class FrontierScene extends BaseScene {
       return { g, rim, spokes };
     });
 
-    const roadY = CY - 0.54;
+    const roadY = CY - 0.5;
     const rdG = new THREE.BufferGeometry();
     rdG.setAttribute(
       'position',
@@ -251,50 +257,112 @@ export default class FrontierScene extends BaseScene {
     this.skid = new THREE.LineSegments(skG, solidMat(0xff8fa3));
     this.gVoice.add(this.skid);
 
-    /** ペダル。ピボットから板が垂れ、踏むと寝る。 */
-    const pedal = (x, mat, plateColor) => {
+    /** ペダル。踏み板・アーム・蝶番からなる側面図で、踏むと寝る。 */
+    const pedal = (x, color, ghost) => {
       const g = new THREE.Group();
       g.position.set(x, -0.2, 0);
-      const plate = rect(0.24, 0.62, 0, -0.31, mat);
-      plate.geometry.translate(0, 0.31, 0); // 回転の中心をピボットへ
-      plate.position.set(0, 0, 0);
-      this.gVoice.remove(plate);
-      g.add(plate);
-      const arm = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints([
-          new THREE.Vector3(0, 0, 0),
-          new THREE.Vector3(0, -0.31, 0),
-        ]),
-        solidMat(plateColor)
+      const L = 0.68;
+      const W = 0.2;
+      const r = 0.05;
+      const sh = new THREE.Shape();
+      sh.moveTo(-W / 2, 0);
+      sh.lineTo(W / 2, 0);
+      sh.lineTo(W / 2, -L + r);
+      sh.quadraticCurveTo(W / 2, -L, W / 2 - r, -L);
+      sh.lineTo(-W / 2 + r, -L);
+      sh.quadraticCurveTo(-W / 2, -L, -W / 2, -L + r);
+      sh.closePath();
+      const fill = new THREE.Mesh(
+        new THREE.ShapeGeometry(sh),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0 })
       );
-      g.add(arm);
-      // 蝶番。ここを支点に回っていることが分かるように点を打つ。
+      g.add(fill);
+      const outline = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(sh.getPoints(20)),
+        ghost ? dashMat(color, 0.09) : solidMat(color)
+      );
+      outline.computeLineDistances();
+      g.add(outline);
+      // 踏み面の滑り止め
+      const tr = [];
+      for (let i = 1; i <= 4; i++) {
+        const y = -L * (0.16 + i * 0.17);
+        tr.push(-W / 2 + 0.035, y, 0.01, W / 2 - 0.035, y, 0.01);
+      }
+      const trG = new THREE.BufferGeometry();
+      trG.setAttribute('position', new THREE.Float32BufferAttribute(tr, 3));
+      const tread = new THREE.LineSegments(trG, solidMat(color));
+      g.add(tread);
       const hinge = new THREE.Mesh(
-        new THREE.CircleGeometry(0.045, 12),
-        new THREE.MeshBasicMaterial({ color: plateColor, transparent: true, opacity: 0 })
+        new THREE.CircleGeometry(0.05, 12),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0 })
       );
       g.add(hinge);
       this.gVoice.add(g);
       const floorG = new THREE.BufferGeometry();
       floorG.setAttribute(
         'position',
-        new THREE.Float32BufferAttribute([x - 0.42, -0.92, 0, x + 0.42, -0.92, 0], 3)
+        new THREE.Float32BufferAttribute([x - 0.52, -1.02, 0, x + 0.52, -1.02, 0], 3)
       );
       const floor = new THREE.Line(floorG, solidMat(0x53627e));
       this.gVoice.add(floor);
-      return { g, plate, arm, floor, hinge };
+      return { g, fill, outline, tread, hinge, floor };
     };
 
     const AX = 0.75;
     const BX = 2.95;
-    this.accel = pedal(AX, dashMat(0x4ecdc4), 0x4ecdc4);
-    this.brake = pedal(BX, solidMat(0x7a8699), 0x7a8699);
+    this.PED = { AX, BX };
+    // アクセルは青（まだ無いので破線）、ブレーキは赤
+    this.accel = pedal(AX, 0x5b9dff, true);
+    this.brake = pedal(BX, 0xff6b6b, false);
 
-    this.accelTag = tag('アクセル', AX, -1.45, '#4ecdc4', 23, 800);
-    this.accelNote = tag('○ 踏み加減で速度を上下できる状態', AX, -1.78, '#4ecdc4', 19, 700);
-    this.accelGhost = tag('（このペダルはまだ無い）', AX, -2.08, '#9fb6dd', 17, 600);
-    this.brakeTag = tag('ブレーキ', BX, -1.45, '#9fb6dd', 23, 800);
-    this.brakeNote = tag('✕ いますぐ止める — 求めていない', BX, -1.78, '#ff8fa3', 19, 700);
+    /*
+     * 踏んでいる足。1足だけ用意して、アクセルとブレーキの間を踏み替えさせる。
+     * 「踏み加減」も「踏み替え」も、足があると一目で伝わる。
+     */
+    const shoe = new THREE.Shape();
+    shoe.moveTo(-0.36, 0);
+    shoe.quadraticCurveTo(-0.4, 0.11, -0.26, 0.14);
+    shoe.lineTo(0.0, 0.18);
+    shoe.quadraticCurveTo(0.13, 0.21, 0.17, 0.31);
+    shoe.lineTo(0.27, 0.58);
+    shoe.lineTo(0.47, 0.51);
+    shoe.lineTo(0.36, 0.21);
+    shoe.quadraticCurveTo(0.33, 0.06, 0.31, 0);
+    shoe.closePath();
+    this.shoe = new THREE.Group();
+    this.shoeFill = new THREE.Mesh(
+      new THREE.ShapeGeometry(shoe),
+      new THREE.MeshBasicMaterial({ color: 0x8fa4c6, transparent: true, opacity: 0 })
+    );
+    this.shoeLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(shoe.getPoints(28)),
+      solidMat(0xdce8ff)
+    );
+    this.shoe.add(this.shoeFill, this.shoeLine);
+    this.shoe.scale.setScalar(0.85);
+    this.gVoice.add(this.shoe);
+
+    // 止まったあとに出す大きな✕。「確かに止まる。でもそれは求めていない」
+    this.bigX = new THREE.Group();
+    this.bigXParts = [-1, 1].map((sgn) => {
+      const m = new THREE.Mesh(
+        new THREE.PlaneGeometry(1.7, 0.14),
+        new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0 })
+      );
+      m.rotation.z = (sgn * Math.PI) / 4;
+      this.bigX.add(m);
+      return m;
+    });
+    this.bigX.position.set(CX, CY + 0.05, 0.06);
+    this.gVoice.add(this.bigX);
+    this.bigXTag = tag('止まりはする。求めていたのは、これではない', CX, CY + 1.15, '#ff8fa3', 19, 800);
+
+    this.accelTag = tag('アクセル', AX, -1.72, '#5b9dff', 23, 800);
+    this.accelNote = tag('○ 踏み加減で速度を上下できる状態', AX, -2.05, '#5b9dff', 19, 700);
+    this.accelGhost = tag('（このペダルはまだ無い）', AX, -2.35, '#9fb6dd', 17, 600);
+    this.brakeTag = tag('ブレーキ', BX, -1.72, '#ff8fa3', 23, 800);
+    this.brakeNote = tag('✕ いますぐ止める — 求めていない', BX, -2.05, '#ff8fa3', 19, 700);
 
     // ペダルを作るのに要る2つの道具
     this.tools = [];
@@ -311,7 +379,7 @@ export default class FrontierScene extends BaseScene {
     this.toolsTag = tag('この2つを国際的に整えるのが要求', GX, -1.78, '#4ecdc4', 19, 800);
 
     // 踏んだ結果がタイヤに出る、という対応だけ短い矢印で示す
-    this.linkAccel = arrow(AX, 0.22, CX - 0.86, CY - 0.86, 0x4ecdc4);
+    this.linkAccel = arrow(AX, 0.22, CX - 0.88, CY - 0.82, 0x5b9dff);
 
     // ══ 署名者（補足）。整列ではなく、かたまりとして置く。
     const N_FIG = 150;
@@ -322,7 +390,7 @@ export default class FrontierScene extends BaseScene {
       const r = Math.sqrt(rand());
       this.figPos.push({
         x: 0.35 + Math.cos(a) * r * 3.05,
-        y: -2.78 + Math.sin(a) * r * 0.3 + (rand() - 0.5) * 0.06,
+        y: -3.05 + Math.sin(a) * r * 0.28 + (rand() - 0.5) * 0.06,
         s: 0.82 + rand() * 0.36,
         ph: rand() * Math.PI * 2,
       });
@@ -350,7 +418,7 @@ export default class FrontierScene extends BaseScene {
     this.crowdTag = tag(
       '署名 1,200人超 — 作っている当事者（1体＝10人）',
       0.35,
-      -3.22,
+      -3.48,
       '#9fb6dd',
       15,
       600
@@ -597,12 +665,15 @@ export default class FrontierScene extends BaseScene {
       this.skid.material.opacity = car * brake * (1 - v) * 0.7;
 
       // ペダル。踏むほど板が寝る。
-      this.accel.g.rotation.z = -0.2 - press * 0.55;
-      this.brake.g.rotation.z = -0.2 - brake * 0.55;
+      const aTheta = -0.22 - press * 0.5;
+      const bTheta = -0.22 - brake * 0.5;
+      this.accel.g.rotation.z = aTheta;
+      this.brake.g.rotation.z = bTheta;
       const ask = clamp(sign * 1.8 - 0.3);
-      const accelOn = a * ask * (brake > 0.1 ? 0.45 : 1);
-      this.accel.plate.material.opacity = accelOn * 0.95;
-      this.accel.arm.material.opacity = accelOn * 0.8;
+      const accelOn = a * ask * (brake > 0.1 ? 0.5 : 1);
+      this.accel.fill.material.opacity = accelOn * 0.22;
+      this.accel.outline.material.opacity = accelOn * 0.95;
+      this.accel.tread.material.opacity = accelOn * 0.55;
       this.accel.hinge.material.opacity = accelOn * 0.9;
       this.accel.floor.material.opacity = a * ask * 0.8;
       this.accelTag.material.opacity = accelOn;
@@ -611,12 +682,32 @@ export default class FrontierScene extends BaseScene {
       this.linkAccel.material.opacity = accelOn * 0.45;
 
       const brakeOn = a * ask * (brake > 0.1 ? 1 : 0.5);
-      this.brake.plate.material.opacity = brakeOn * 0.9;
-      this.brake.arm.material.opacity = brakeOn * 0.75;
+      this.brake.fill.material.opacity = brakeOn * 0.4;
+      this.brake.outline.material.opacity = brakeOn * 0.95;
+      this.brake.tread.material.opacity = brakeOn * 0.6;
       this.brake.hinge.material.opacity = brakeOn * 0.85;
       this.brake.floor.material.opacity = a * ask * 0.8;
       this.brakeTag.material.opacity = brakeOn;
       this.brakeNote.material.opacity = a * ask * (brake > 0.1 ? 1 : 0.55);
+
+      // 足はアクセルからブレーキへ踏み替える。移る間はいったん持ち上げる。
+      const foot = brake > 0 ? 1 : clamp((T - 0.62) / 0.08);
+      const { AX, BX } = this.PED;
+      const px = (bx, th) => bx + 0.12 * Math.cos(th) + 0.3 * Math.sin(th);
+      const py = (th) => -0.2 + 0.12 * Math.sin(th) - 0.3 * Math.cos(th);
+      this.shoe.position.set(
+        lerp(px(AX, aTheta), px(BX, bTheta), foot),
+        lerp(py(aTheta), py(bTheta), foot) + Math.sin(Math.PI * foot) * 0.34,
+        0.04
+      );
+      this.shoe.rotation.z = lerp(aTheta, bTheta, foot) - Math.PI / 2;
+      this.shoeFill.material.opacity = a * ask * 0.8;
+      this.shoeLine.material.opacity = a * ask * 0.95;
+
+      // 止まりきったところで✕を出す
+      const rejected = clamp((brake - 0.4) / 0.3) * clamp(1 - v * 8);
+      this.bigXParts.forEach((m) => (m.material.opacity = a * rejected * 0.9));
+      this.bigXTag.material.opacity = a * rejected;
 
       const tools = clamp(sign * 2.2 - 1.0);
       this.tools.forEach((o) => (o.material.opacity = a * tools * 0.7));
