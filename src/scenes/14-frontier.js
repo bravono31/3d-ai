@@ -257,20 +257,27 @@ export default class FrontierScene extends BaseScene {
     this.skid = new THREE.LineSegments(skG, solidMat(0xff8fa3));
     this.gVoice.add(this.skid);
 
-    /** ペダル。踏み板・アーム・蝶番からなる側面図で、踏むと寝る。 */
+    /*
+     * ペダル。支点は右端（かかと側）にあり、踏むとつま先側が下がる。
+     * ローカルでは -x 方向へ板を伸ばし、群ごと回す。
+     */
+    const P_L = 0.62; //  板の長さ
+    const P_W = 0.15; //  板の厚み
+    const FLOOR_Y = -1.05;
+    const PIV_Y = FLOOR_Y + 0.34; // 支点の高さ
+    this.PED_GEO = { P_L, P_W, FLOOR_Y, PIV_Y };
+
     const pedal = (x, color, ghost) => {
       const g = new THREE.Group();
-      g.position.set(x, -0.2, 0);
-      const L = 0.68;
-      const W = 0.2;
-      const r = 0.05;
+      g.position.set(x, PIV_Y, 0);
+      const r = 0.045;
       const sh = new THREE.Shape();
-      sh.moveTo(-W / 2, 0);
-      sh.lineTo(W / 2, 0);
-      sh.lineTo(W / 2, -L + r);
-      sh.quadraticCurveTo(W / 2, -L, W / 2 - r, -L);
-      sh.lineTo(-W / 2 + r, -L);
-      sh.quadraticCurveTo(-W / 2, -L, -W / 2, -L + r);
+      sh.moveTo(0, -P_W / 2);
+      sh.lineTo(-P_L + r, -P_W / 2);
+      sh.quadraticCurveTo(-P_L, -P_W / 2, -P_L, -P_W / 2 + r);
+      sh.lineTo(-P_L, P_W / 2 - r);
+      sh.quadraticCurveTo(-P_L, P_W / 2, -P_L + r, P_W / 2);
+      sh.lineTo(0, P_W / 2);
       sh.closePath();
       const fill = new THREE.Mesh(
         new THREE.ShapeGeometry(sh),
@@ -278,46 +285,56 @@ export default class FrontierScene extends BaseScene {
       );
       g.add(fill);
       const outline = new THREE.Line(
-        new THREE.BufferGeometry().setFromPoints(sh.getPoints(20)),
-        ghost ? dashMat(color, 0.09) : solidMat(color)
+        new THREE.BufferGeometry().setFromPoints(sh.getPoints(18)),
+        ghost ? dashMat(color, 0.08) : solidMat(color)
       );
       outline.computeLineDistances();
       g.add(outline);
       // 踏み面の滑り止め
       const tr = [];
       for (let i = 1; i <= 4; i++) {
-        const y = -L * (0.16 + i * 0.17);
-        tr.push(-W / 2 + 0.035, y, 0.01, W / 2 - 0.035, y, 0.01);
+        const px = -P_L * (0.14 + i * 0.17);
+        tr.push(px, -P_W / 2 + 0.03, 0.01, px, P_W / 2 - 0.03, 0.01);
       }
       const trG = new THREE.BufferGeometry();
       trG.setAttribute('position', new THREE.Float32BufferAttribute(tr, 3));
       const tread = new THREE.LineSegments(trG, solidMat(color));
       g.add(tread);
+      // 支点
       const hinge = new THREE.Mesh(
         new THREE.CircleGeometry(0.05, 12),
         new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0 })
       );
       g.add(hinge);
+      // 支点を床につなぐ台座
+      const post = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0.02, -0.34, 0),
+        ]),
+        solidMat(color)
+      );
       this.gVoice.add(g);
+      g.add(post);
       const floorG = new THREE.BufferGeometry();
       floorG.setAttribute(
         'position',
-        new THREE.Float32BufferAttribute([x - 0.52, -1.02, 0, x + 0.52, -1.02, 0], 3)
+        new THREE.Float32BufferAttribute([x - 0.82, FLOOR_Y, 0, x + 0.28, FLOOR_Y, 0], 3)
       );
       const floor = new THREE.Line(floorG, solidMat(0x53627e));
       this.gVoice.add(floor);
-      return { g, fill, outline, tread, hinge, floor };
+      return { g, fill, outline, tread, hinge, post, floor };
     };
 
-    const AX = 0.75;
-    const BX = 2.95;
+    const AX = 0.95;
+    const BX = 3.15;
     this.PED = { AX, BX };
     // アクセルは青（まだ無いので破線）、ブレーキは赤
     this.accel = pedal(AX, 0x5b9dff, true);
     this.brake = pedal(BX, 0xff6b6b, false);
 
     /*
-     * 踏んでいる足。1足だけ用意して、アクセルとブレーキの間を踏み替えさせる。
+     * 踏んでいる足。1足だけ用意し、アクセルとブレーキの間を踏み替えさせる。
      * 「踏み加減」も「踏み替え」も、足があると一目で伝わる。
      */
     const shoe = new THREE.Shape();
@@ -340,29 +357,31 @@ export default class FrontierScene extends BaseScene {
       solidMat(0xdce8ff)
     );
     this.shoe.add(this.shoeFill, this.shoeLine);
-    this.shoe.scale.setScalar(0.85);
+    this.shoe.scale.setScalar(0.82);
     this.gVoice.add(this.shoe);
 
-    // 止まったあとに出す大きな✕。「確かに止まる。でもそれは求めていない」
+    /*
+     * 止まったあとにブレーキ側へ出す✕。
+     * 停止から1秒おき、1秒のあいだに2回点滅してから点灯させる。
+     */
     this.bigX = new THREE.Group();
     this.bigXParts = [-1, 1].map((sgn) => {
       const m = new THREE.Mesh(
-        new THREE.PlaneGeometry(1.7, 0.14),
-        new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0 })
+        new THREE.PlaneGeometry(0.62, 0.075),
+        new THREE.MeshBasicMaterial({ color: 0xff4d6a, transparent: true, opacity: 0 })
       );
       m.rotation.z = (sgn * Math.PI) / 4;
       this.bigX.add(m);
       return m;
     });
-    this.bigX.position.set(CX, CY + 0.05, 0.06);
+    this.bigX.position.set(BX - P_L * 0.5, PIV_Y + 0.02, 0.08);
     this.gVoice.add(this.bigX);
-    this.bigXTag = tag('止まりはする。求めていたのは、これではない', CX, CY + 1.15, '#ff8fa3', 19, 800);
 
-    this.accelTag = tag('アクセル', AX, -1.72, '#5b9dff', 23, 800);
-    this.accelNote = tag('○ 踏み加減で速度を上下できる状態', AX, -2.05, '#5b9dff', 19, 700);
-    this.accelGhost = tag('（このペダルはまだ無い）', AX, -2.35, '#9fb6dd', 17, 600);
-    this.brakeTag = tag('ブレーキ', BX, -1.72, '#ff8fa3', 23, 800);
-    this.brakeNote = tag('✕ いますぐ止める — 求めていない', BX, -2.05, '#ff8fa3', 19, 700);
+    this.accelTag = tag('アクセル', AX - 0.3, -1.72, '#5b9dff', 23, 800);
+    this.accelNote = tag('○ 踏み加減で速度を上下できる状態', AX - 0.3, -2.05, '#5b9dff', 19, 700);
+    this.accelGhost = tag('（このペダルはまだ無い）', AX - 0.3, -2.35, '#9fb6dd', 17, 600);
+    this.brakeTag = tag('ブレーキ', BX - 0.3, -1.72, '#ff8fa3', 23, 800);
+    this.brakeNote = tag('✕ いますぐ止める — 求めていない', BX - 0.3, -2.05, '#ff8fa3', 19, 700);
 
     // ペダルを作るのに要る2つの道具
     this.tools = [];
@@ -375,11 +394,11 @@ export default class FrontierScene extends BaseScene {
       this.toolTags.push(tag(d.t, GX, d.y + 0.11, '#dff6f3', 19, 800));
       this.toolTags.push(tag(d.s, GX, d.y - 0.16, '#9fb6dd', 14, 600));
     });
-    this.tools.push(arrow(GX + 1.12, -0.86, AX - 0.55, -0.5, 0x4ecdc4));
+    this.tools.push(arrow(GX + 1.12, -0.86, AX - 1.0, -0.72, 0x4ecdc4));
     this.toolsTag = tag('この2つを国際的に整えるのが要求', GX, -1.78, '#4ecdc4', 19, 800);
 
     // 踏んだ結果がタイヤに出る、という対応だけ短い矢印で示す
-    this.linkAccel = arrow(AX, 0.22, CX - 0.88, CY - 0.82, 0x5b9dff);
+    this.linkAccel = arrow(AX - 0.3, -0.32, CX - 0.88, CY - 0.82, 0x5b9dff);
 
     // ══ 署名者（補足）。整列ではなく、かたまりとして置く。
     const N_FIG = 150;
@@ -664,9 +683,11 @@ export default class FrontierScene extends BaseScene {
       this.motion.material.opacity = car * clamp(v * 1.6 - 0.25) * 0.6;
       this.skid.material.opacity = car * brake * (1 - v) * 0.7;
 
-      // ペダル。踏むほど板が寝る。
-      const aTheta = -0.22 - press * 0.5;
-      const bTheta = -0.22 - brake * 0.5;
+      // ペダル。踏むほどつま先側が下がる。
+      const { P_L, P_W, PIV_Y } = this.PED_GEO;
+      const angle = (u) => lerp(-0.32, 0.17, u); // 離した状態 → 踏み込んだ状態
+      const aTheta = angle(press);
+      const bTheta = angle(brake);
       this.accel.g.rotation.z = aTheta;
       this.brake.g.rotation.z = bTheta;
       const ask = clamp(sign * 1.8 - 0.3);
@@ -675,6 +696,7 @@ export default class FrontierScene extends BaseScene {
       this.accel.outline.material.opacity = accelOn * 0.95;
       this.accel.tread.material.opacity = accelOn * 0.55;
       this.accel.hinge.material.opacity = accelOn * 0.9;
+      this.accel.post.material.opacity = accelOn * 0.6;
       this.accel.floor.material.opacity = a * ask * 0.8;
       this.accelTag.material.opacity = accelOn;
       this.accelNote.material.opacity = accelOn;
@@ -686,6 +708,7 @@ export default class FrontierScene extends BaseScene {
       this.brake.outline.material.opacity = brakeOn * 0.95;
       this.brake.tread.material.opacity = brakeOn * 0.6;
       this.brake.hinge.material.opacity = brakeOn * 0.85;
+      this.brake.post.material.opacity = brakeOn * 0.6;
       this.brake.floor.material.opacity = a * ask * 0.8;
       this.brakeTag.material.opacity = brakeOn;
       this.brakeNote.material.opacity = a * ask * (brake > 0.1 ? 1 : 0.55);
@@ -693,21 +716,41 @@ export default class FrontierScene extends BaseScene {
       // 足はアクセルからブレーキへ踏み替える。移る間はいったん持ち上げる。
       const foot = brake > 0 ? 1 : clamp((T - 0.62) / 0.08);
       const { AX, BX } = this.PED;
-      const px = (bx, th) => bx + 0.12 * Math.cos(th) + 0.3 * Math.sin(th);
-      const py = (th) => -0.2 + 0.12 * Math.sin(th) - 0.3 * Math.cos(th);
+      // 板の上面の中ほどに靴を載せる
+      const ox = -P_L * 0.45;
+      const oy = P_W / 2 + 0.015;
+      const fx = (bx, th) => bx + ox * Math.cos(th) - oy * Math.sin(th);
+      const fy = (th) => PIV_Y + ox * Math.sin(th) + oy * Math.cos(th);
       this.shoe.position.set(
-        lerp(px(AX, aTheta), px(BX, bTheta), foot),
-        lerp(py(aTheta), py(bTheta), foot) + Math.sin(Math.PI * foot) * 0.34,
+        lerp(fx(AX, aTheta), fx(BX, bTheta), foot),
+        lerp(fy(aTheta), fy(bTheta), foot) + Math.sin(Math.PI * foot) * 0.34,
         0.04
       );
-      this.shoe.rotation.z = lerp(aTheta, bTheta, foot) - Math.PI / 2;
+      this.shoe.rotation.z = lerp(aTheta, bTheta, foot);
       this.shoeFill.material.opacity = a * ask * 0.8;
       this.shoeLine.material.opacity = a * ask * 0.95;
 
-      // 止まりきったところで✕を出す
-      const rejected = clamp((brake - 0.4) / 0.3) * clamp(1 - v * 8);
-      this.bigXParts.forEach((m) => (m.material.opacity = a * rejected * 0.9));
-      this.bigXTag.material.opacity = a * rejected;
+      /*
+       * 止まりきってから✕を出す。
+       * 停止の1秒後に点き、1秒のあいだに2回点滅してから点灯したままにする。
+       */
+      if (brake > 0.5 && v < 0.02) {
+        this._stoppedAt = this._stoppedAt ?? time;
+      } else if (brake < 0.05) {
+        this._stoppedAt = null;
+      }
+      let xOn = 0;
+      if (this._stoppedAt != null) {
+        const e = time - this._stoppedAt;
+        if (e >= 2) xOn = 1;
+        else if (e >= 1) xOn = Math.floor((e - 1) / 0.25) % 2 === 0 ? 1 : 0;
+      }
+      this.bigX.position.set(
+        BX + ox * 1.1 * Math.cos(bTheta),
+        PIV_Y + ox * 1.1 * Math.sin(bTheta) + 0.02,
+        0.08
+      );
+      this.bigXParts.forEach((m) => (m.material.opacity = a * ask * xOn));
 
       const tools = clamp(sign * 2.2 - 1.0);
       this.tools.forEach((o) => (o.material.opacity = a * tools * 0.7));
