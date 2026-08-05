@@ -235,48 +235,136 @@ export default class ConflictsScene extends BaseScene {
     this.suitNote.position.set(0, -2.65, 0);
     this.gSuit.add(this.suitNote);
 
-    // ══════ 2: 国家の線（輸出規制・サービス遮断）
+    /*
+     * ══════ 2: 国家が引く2本の線
+     *
+     * 同じ「国家が引く線」でも、引かれる場所が違う。
+     *   供給の線：出口で止める（米国が自国のチップを出さない）
+     *   需要の線：入口で止める（欧州が他国のサービスを入れない）
+     * 2本のレーンを上下に並べ、壁の位置を出口側・入口側に置き分けて、
+     * 「どこで止めているか」の違いが一目で分かるようにする。
+     */
     this.gState = new THREE.Group();
     this.gState.visible = false;
+    this.gState.position.set(0.75, 0.1, 0);
     this.root.add(this.gState);
 
-    const wallGeo = new THREE.BoxGeometry(0.22, 2.6, 1.4);
-    this.wall = new THREE.Mesh(
-      wallGeo,
-      new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0.22 })
-    );
-    this.wall.position.set(0, 0.6, 0);
-    this.gState.add(this.wall);
-    this.wallWire = new THREE.LineSegments(
-      new THREE.EdgesGeometry(wallGeo),
-      new THREE.LineBasicMaterial({ color: 0xff6b6b, transparent: true })
-    );
-    this.wallWire.position.copy(this.wall.position);
-    this.gState.add(this.wallWire);
+    const X0 = -3.5; // 出発地
+    const X1 = 2.95; // 行き先
+    const laneDefs = [
+      {
+        title: '供給の線 — 出口で止める',
+        from: '米国',
+        to: '中国',
+        wallX: -1.7,
+        wall: '対中輸出規制',
+        note: '2026-03  Chip Security Act（追跡技術の埋め込み）',
+        leakNote: '密輸・迂回で一部は流入',
+        y: 1.5,
+        c: 0x9ede3a,
+        wc: 0xff6b6b,
+        leak: true,
+      },
+      {
+        title: '需要の線 — 入口で止める',
+        from: '中国のモデル\nDeepSeek',
+        to: 'EU\n伊・独ほか',
+        wallX: 1.55,
+        wall: '個人データ保護で遮断',
+        note: '2025-01 イタリアが遮断、独なども追随',
+        leakNote: '',
+        y: -1.75,
+        c: 0x8ab6ff,
+        wc: 0xff6b6b,
+        leak: false,
+      },
+    ];
 
-    const chipGeo = new THREE.BoxGeometry(0.3, 0.3, 0.06);
-    this.chips = new THREE.InstancedMesh(
-      chipGeo,
-      new THREE.MeshBasicMaterial({ color: 0x9ede3a, transparent: true }),
-      26
-    );
-    this.chipSeed = [];
-    for (let i = 0; i < 26; i++) {
-      this.chipSeed.push({ t: i / 26, leak: i % 5 === 0, y: (i % 7) * 0.32 - 0.9 });
-    }
-    this.gState.add(this.chips);
-
-    this.stateTags = [
-      { t: '米国：先端チップの輸出規制', x: -3.6, y: 2.35, c: '#9ede3a' },
-      { t: '中国：迂回・密輸で一部が流入', x: 3.6, y: 2.35, c: '#ff9aa5' },
-      { t: '2026-03  Chip Security Act：チップに追跡技術を埋め込む', x: 0, y: -1.55, c: '#ffd166' },
-      { t: '逆方向：伊・独などが DeepSeek を個人データ保護で遮断', x: 0, y: -2.05, c: '#8ab6ff' },
-    ].map((d) => {
-      const s = makeLabel(d.t, { fontSize: 26, height: 0.23, color: d.c, weight: 700 });
-      s.position.set(d.x, d.y, 0.9);
+    this.stateTags = [];
+    const stateTag = (text, x, y, color, size = 26, lineGap = 1.25) => {
+      const s = makeLabel(text, {
+        fontSize: size,
+        height: (size / 26) * 0.23 * (text.includes('\n') ? 2.2 : 1),
+        color,
+        weight: 700,
+        lineGap,
+      });
+      s.position.set(x, y, 0.9);
       this.gState.add(s);
+      this.stateTags.push(s);
       return s;
+    };
+
+    this.lanes = laneDefs.map((d) => {
+      const hex = '#' + new THREE.Color(d.c).getHexString();
+      const wHex = '#' + new THREE.Color(d.wc).getHexString();
+
+      // レーンの床。ここを荷物が流れる。
+      const lane = new THREE.Mesh(
+        new THREE.PlaneGeometry(X1 - X0, 0.9),
+        new THREE.MeshBasicMaterial({ color: d.c, transparent: true, opacity: 0.06 })
+      );
+      lane.position.set((X0 + X1) / 2, d.y, -0.05);
+      this.gState.add(lane);
+
+      // 出発地と行き先
+      const mkEnd = (x, label) => {
+        const box = new THREE.Mesh(
+          new THREE.BoxGeometry(0.5, 0.8, 0.5),
+          new THREE.MeshBasicMaterial({ color: d.c, transparent: true, opacity: 0.22 })
+        );
+        box.position.set(x, d.y, 0);
+        this.gState.add(box);
+        const wire = new THREE.LineSegments(
+          new THREE.EdgesGeometry(new THREE.BoxGeometry(0.5, 0.8, 0.5)),
+          new THREE.LineBasicMaterial({ color: d.c, transparent: true })
+        );
+        wire.position.copy(box.position);
+        this.gState.add(wire);
+        const lb = stateTag(label, x, d.y - (label.includes('\n') ? 0.86 : 0.66), hex, 25);
+        return { box, wire, lb };
+      };
+      const from = mkEnd(X0, d.from);
+      const to = mkEnd(X1, d.to);
+
+      // 国家が引いた線そのもの
+      const wallGeo = new THREE.BoxGeometry(0.14, 1.5, 1.1);
+      const wall = new THREE.Mesh(
+        wallGeo,
+        new THREE.MeshBasicMaterial({ color: d.wc, transparent: true, opacity: 0.22 })
+      );
+      wall.position.set(d.wallX, d.y, 0);
+      this.gState.add(wall);
+      const wallWire = new THREE.LineSegments(
+        new THREE.EdgesGeometry(wallGeo),
+        new THREE.LineBasicMaterial({ color: d.wc, transparent: true })
+      );
+      wallWire.position.copy(wall.position);
+      this.gState.add(wallWire);
+
+      const title = stateTag(d.title, (X0 + X1) / 2, d.y + 1.16, '#eaf3ff', 29);
+      const wallLb = stateTag(d.wall, d.wallX, d.y + 0.74, wHex, 24);
+      const note = stateTag(d.note, (X0 + X1) / 2 + 0.3, d.y - 1.32, '#ffd166', 23);
+      const leakLb = d.leak
+        ? stateTag(d.leakNote, (X0 + X1) / 2 + 0.3, d.y - 1.0, '#ff9aa5', 22)
+        : null;
+
+      // 流れる荷物。大半は壁で止まり、一部だけ迂回して越える。
+      const N = 16;
+      const cargo = new THREE.InstancedMesh(
+        new THREE.BoxGeometry(0.26, 0.26, 0.06),
+        new THREE.MeshBasicMaterial({ color: d.c, transparent: true }),
+        N
+      );
+      this.gState.add(cargo);
+      const seed = [];
+      for (let i = 0; i < N; i++) {
+        seed.push({ t: i / N, leak: d.leak && i % 6 === 0, z: ((i % 3) - 1) * 0.3 });
+      }
+
+      return { ...d, from, to, wall, wallWire, lane, title, wallLb, note, leakLb, cargo, seed, N };
     });
+    this.LANE_X = { X0, X1 };
 
     // ══════ 3: 3つの層に、3つの法
     this.gLaw = new THREE.Group();
@@ -405,31 +493,43 @@ export default class ConflictsScene extends BaseScene {
     // ── 国家の線
     this.gState.visible = state > 0.01;
     if (this.gState.visible) {
-      this.wall.material.opacity = state * 0.22;
-      this.wallWire.material.opacity = state * 0.9;
+      const { X0, X1 } = this.LANE_X;
       const m = new THREE.Matrix4();
-      for (let i = 0; i < 26; i++) {
-        const sd = this.chipSeed[i];
-        let t = (sd.t + time * 0.11) % 1;
-        // 大半は壁で止まり、一部（密輸）だけ迂回して抜ける
-        let x, y, z;
-        if (sd.leak) {
-          x = lerp(-5.2, 5.2, t);
-          y = sd.y + Math.sin(t * Math.PI) * 2.1;
-          z = Math.sin(t * Math.PI) * 1.6;
-        } else {
-          const stop = Math.min(t, 0.47);
-          x = lerp(-5.2, 5.2, stop);
-          y = sd.y + Math.sin(stop * 6) * 0.06;
-          z = 0;
+      this.lanes.forEach((L, li) => {
+        const a = state * clamp(state * 2 - li * 0.3);
+        L.lane.material.opacity = a * 0.06;
+        L.wall.material.opacity = a * 0.22;
+        L.wallWire.material.opacity = a * 0.95;
+        [L.from, L.to].forEach((e) => {
+          e.box.material.opacity = a * 0.22;
+          e.wire.material.opacity = a * 0.9;
+        });
+
+        // 壁の手前で止まり、行き止まりで消える。抜けるのは密輸ぶんだけ。
+        const stopT = (L.wallX - 0.3 - X0) / (X1 - X0);
+        for (let i = 0; i < L.N; i++) {
+          const sd = L.seed[i];
+          const t = (sd.t + time * 0.09) % 1;
+          let x, y, z;
+          if (sd.leak) {
+            x = lerp(X0, X1, t);
+            y = L.y + Math.sin(clamp((t - stopT) / 0.5) * Math.PI) * 1.05;
+            z = sd.z + Math.sin(clamp((t - stopT) / 0.5) * Math.PI) * 0.9;
+          } else {
+            // 手前で詰まって積み上がる
+            const s2 = Math.min(t, stopT);
+            x = lerp(X0, X1, s2) - (t > stopT ? ((t - stopT) % 0.14) * 1.6 : 0);
+            y = L.y + (t > stopT ? ((i % 4) - 1.5) * 0.22 : 0);
+            z = sd.z;
+          }
+          m.makeTranslation(x, y, z);
+          L.cargo.setMatrixAt(i, m);
         }
-        m.makeTranslation(x, y, z);
-        this.chips.setMatrixAt(i, m);
-      }
-      this.chips.instanceMatrix.needsUpdate = true;
-      this.chips.material.opacity = state * 0.95;
-      this.stateTags.forEach((t2, i) => (t2.material.opacity = clamp(state * 2 - i * 0.22)));
-      this.gState.rotation.y = Math.sin(time * 0.12) * 0.07;
+        L.cargo.instanceMatrix.needsUpdate = true;
+        L.cargo.material.opacity = a * 0.95;
+      });
+      this.stateTags.forEach((t2, i) => (t2.material.opacity = clamp(state * 2.2 - i * 0.12)));
+      this.gState.rotation.y = Math.sin(time * 0.12) * 0.05;
     }
 
     // ── 3層3法

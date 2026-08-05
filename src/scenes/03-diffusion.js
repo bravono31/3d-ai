@@ -7,6 +7,21 @@ const GH = 62; //             縦
 const COUNT = GW * GH;
 const FRAMES = 6;
 
+/** 画像の大きさ（ワールド単位）。最初から最後までこの枠は変わらない。 */
+const IW = 6.6;
+const IH = (IW * GH) / GW;
+/** デノイズの反復回数。値が段で変わるので「少しずつきれいにする」処理だと分かる。 */
+const STEPS = 16;
+
+/*
+ * 画素が隙間なく並ぶ点の大きさ。
+ * three.js の点は gl_PointSize = size * (画面高さ/2) / z で、視野角が入らない。
+ * 一方ワールドの間隔が画面に映る大きさには tan(fov/2) が効くので、その分を割り戻す。
+ * これを外すと点が間隔より小さくなり、画像ではなく網点に見える。
+ */
+// 5% ぶん重ねているのは、点の大きさが画素に丸められて隙間の筋が出るのを防ぐため
+const PT = (IW / (GW - 1) / Math.tan((45 * Math.PI) / 360)) * 1.05;
+
 /** 生成結果に見立てた絵をオフスクリーンに描き、画素を点群の目標色として使う */
 function paintTarget() {
   const cv = document.createElement('canvas');
@@ -75,39 +90,29 @@ export default class DiffusionScene extends BaseScene {
     this.camera.position.set(0, 0, 8.4);
     const px = paintTarget();
 
-    const noise = new Float32Array(COUNT * 3);
     const image = new Float32Array(COUNT * 3);
     const latent = new Float32Array(COUNT * 3);
     const video = new Float32Array(COUNT * 3);
     const imgCol = new Float32Array(COUNT * 3);
-    const noiseCol = new Float32Array(COUNT * 3);
-
-    const IW = 8.2;
-    const IH = (IW * GH) / GW;
 
     for (let i = 0; i < COUNT; i++) {
       const gx = i % GW;
       const gy = Math.floor(i / GW);
 
-      // 画像状態：格子に並ぶ
+      /*
+       * 画像状態：格子に並ぶ。
+       * 拡散は決まった大きさの枠の上で値（色）だけを変える処理なので、
+       * 画素の位置は最初のノイズから最後の絵まで一度も動かさない。
+       * 散らばった粒を集めて並べ替えるのではない。
+       */
       image[i * 3] = (gx / (GW - 1) - 0.5) * IW;
       image[i * 3 + 1] = -(gy / (GH - 1) - 0.5) * IH;
       image[i * 3 + 2] = 0;
 
-      /*
-       * ノイズ状態：画素の「位置」は最初から最後まで動かない。
-       * 拡散は決まった大きさの格子の上で値（色）だけを変える処理であって、
-       * 散らばった粒を集めて並べ替えるのではない。
-       * 奥行きのゆらぎだけ、ノイズの大きさを表すために持たせる。
-       */
-      noise[i * 3] = image[i * 3];
-      noise[i * 3 + 1] = image[i * 3 + 1];
-      noise[i * 3 + 2] = (rand() - 0.5) * 1.6;
-
       // 潜在状態：小さく密な板
       latent[i * 3] = image[i * 3] * 0.3;
       latent[i * 3 + 1] = image[i * 3 + 1] * 0.3;
-      latent[i * 3 + 2] = (rand() - 0.5) * 0.55;
+      latent[i * 3 + 2] = (rand() - 0.5) * 0.38;
 
       // 動画状態：6枚のフレームに分けて奥行き方向へ
       const f = i % FRAMES;
@@ -124,15 +129,11 @@ export default class DiffusionScene extends BaseScene {
       imgCol[i * 3 + 1] = px[o + 1] / 255;
       imgCol[i * 3 + 2] = px[o + 2] / 255;
 
-      const n = 0.28 + rand() * 0.5;
-      noiseCol[i * 3] = n * 0.72;
-      noiseCol[i * 3 + 1] = n * 0.82;
-      noiseCol[i * 3 + 2] = n;
     }
 
-    this.states = { noise, image, latent, video, imgCol, noiseCol };
-    this.posAttr = new THREE.BufferAttribute(new Float32Array(noise), 3);
-    this.colAttr = new THREE.BufferAttribute(new Float32Array(noiseCol), 3);
+    this.states = { image, latent, video, imgCol };
+    this.posAttr = new THREE.BufferAttribute(new Float32Array(image), 3);
+    this.colAttr = new THREE.BufferAttribute(new Float32Array(COUNT * 3), 3);
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', this.posAttr);
@@ -140,7 +141,7 @@ export default class DiffusionScene extends BaseScene {
     this.points = new THREE.Points(
       geo,
       new THREE.PointsMaterial({
-        size: 0.075,
+        size: PT,
         vertexColors: true,
         transparent: true,
         opacity: 1,
@@ -148,6 +149,44 @@ export default class DiffusionScene extends BaseScene {
       })
     );
     this.root.add(this.points);
+
+    // ── 画像の枠。大きさが最初から最後まで変わらないことを見せる
+    this.imgFrame = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(IW + PT, IH + PT)),
+      new THREE.LineBasicMaterial({ color: 0x8ab6ff, transparent: true, opacity: 0 })
+    );
+    this.root.add(this.imgFrame);
+    this.frameTag = makeLabel(`${GW} × ${GH} の枠は最後まで変わらない`, {
+      fontSize: 26,
+      height: 0.22,
+      color: '#8ab6ff',
+      weight: 700,
+    });
+    this.frameTag.position.set(0, -IH / 2 - 0.42, 0);
+    this.root.add(this.frameTag);
+
+    // ── デノイズの進み具合。1マスが1ステップで、埋まるほどノイズが取れている。
+    const bw = 0.17;
+    const bh = 0.11;
+    const bx = (k) => (k - (STEPS - 1) / 2) * (bw + 0.05);
+    const bp = [];
+    const bi = [];
+    for (let k = 0; k < STEPS; k++) {
+      const x = bx(k);
+      bp.push(x - bw / 2, -bh / 2, 0, x + bw / 2, -bh / 2, 0, x + bw / 2, bh / 2, 0, x - bw / 2, bh / 2, 0);
+      const v = k * 4;
+      bi.push(v, v + 1, v + 2, v, v + 2, v + 3);
+    }
+    const stepGeo = new THREE.BufferGeometry();
+    stepGeo.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3));
+    stepGeo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(STEPS * 4 * 3), 3));
+    stepGeo.setIndex(bi);
+    this.stepBar = new THREE.Mesh(
+      stepGeo,
+      new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0 })
+    );
+    this.stepBar.position.set(0, IH / 2 + 0.26, 0);
+    this.root.add(this.stepBar);
 
     // ── 潜在空間の枠
     const boxGeo = new THREE.BoxGeometry(IW * 0.3 + 0.3, IH * 0.3 + 0.3, 0.9);
@@ -254,15 +293,22 @@ export default class DiffusionScene extends BaseScene {
 
     const pos = this.posAttr.array;
     const col = this.colAttr.array;
+    /*
+     * デノイズは1回で終わらず、少しずつきれいにする処理を何度も繰り返す。
+     * 連続に薄めるとただのクロスフェードに見えるので、段階を残す。
+     * step が変わるたびに砂嵐の目も振り直す（同じ絵が薄まるのではなく、
+     * 毎回ノイズを引き算した別の推定が出てくる）。
+     */
+    const step = Math.round(den * STEPS);
     // まだ取れていないノイズの量。位置ではなく「値のばらつき」として使う。
-    const nAmp = 1 - den;
+    const nAmp = 1 - step / STEPS;
 
     for (let i = 0; i < COUNT; i++) {
       const o = i * 3;
       // 縦横の位置は動かさない。デノイズの間、画像の大きさも画素の並びも変わらない。
       let x = s.image[o];
       let y = s.image[o + 1];
-      let z = lerp(s.noise[o + 2], 0, den);
+      let z = 0;
 
       if (lat > 0) {
         x = lerp(x, s.latent[o], lat);
@@ -280,10 +326,10 @@ export default class DiffusionScene extends BaseScene {
       pos[o + 2] = z;
 
       if (nAmp > 0.002) {
-        // 毎フレーム値が振れる砂嵐。残りノイズ量ぶんだけ画像の色に混ぜる。
-        let h = Math.sin(i * 127.1 + time * 29.0) * 43758.5453;
+        // このステップの砂嵐。残りノイズ量ぶんだけ画像の色に混ぜる。
+        let h = Math.sin(i * 127.1 + step * 57.7) * 43758.5453;
         h -= Math.floor(h);
-        const g = 0.18 + h * 0.82;
+        const g = 0.16 + h * 0.84;
         col[o] = lerp(s.imgCol[o], g * 0.82, nAmp);
         col[o + 1] = lerp(s.imgCol[o + 1], g * 0.88, nAmp);
         col[o + 2] = lerp(s.imgCol[o + 2], g, nAmp);
@@ -295,7 +341,20 @@ export default class DiffusionScene extends BaseScene {
     }
     this.posAttr.needsUpdate = true;
     this.colAttr.needsUpdate = true;
-    this.points.material.size = lerp(0.075, 0.05, Math.max(lat, vid));
+    // 圧縮・動画では画素の間隔も詰まるので、点も同じ割合で小さくする
+    this.points.material.size = PT * lerp(1, 0.46, Math.max(lat, vid));
+
+    // ── 画像の枠と、デノイズの進み具合
+    const framed = (1 - lat) * clamp(den * 3 + 0.3);
+    this.imgFrame.material.opacity = framed * 0.5;
+    this.frameTag.material.opacity = framed * 0.75;
+    this.stepBar.material.opacity = framed;
+    const sc = this.stepBar.geometry.attributes.color;
+    for (let k = 0; k < STEPS; k++) {
+      const on = k < step ? 1 : 0.16;
+      for (let v = 0; v < 4; v++) sc.setXYZ(k * 4 + v, 0.54 * on, 0.71 * on, 1.0 * on);
+    }
+    sc.needsUpdate = true;
 
     // 枠とラベル
     this.latentBox.material.opacity = lat * (1 - vid) * 0.85;

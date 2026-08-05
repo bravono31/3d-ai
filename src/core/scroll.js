@@ -135,10 +135,17 @@ export class ScrollTracker {
     return cover;
   }
 
-  /** 前後の章ぶんだけカードを更新する（章をまたぐ瞬間にカードが飛び出さないように） */
-  _paintCards(ci, focus, vh) {
-    for (let c = Math.max(0, ci - 1); c <= Math.min(this.layout.length - 1, ci + 1); c++) {
-      for (const b of this.layout[c].beats) {
+  /**
+   * 全ビートのカードを更新する。
+   *
+   * 「近くの章だけ」に絞ると、目次で遠くへ飛んだときに飛ぶ前の章のカードが
+   * 更新されないまま残る——カードは fixed なので、消す指示が来ない限り
+   * 画面に貼りついたままになり、飛んだ先のカードと重なって見える。
+   * 画面外のカードは cardState が即 null を返し、_on を見て抜けるので全部回しても軽い。
+   */
+  _paintCards(focus, vh) {
+    for (const L of this.layout) {
+      for (const b of L.beats) {
         const t = (focus - b.center) / vh;
         const st = cardState(t, this.read);
         const ref = b.ref;
@@ -149,6 +156,10 @@ export class ScrollTracker {
             ref.card.style.setProperty('--card-o', '0');
             ref.card.classList.remove('is-active');
             ref._active = false;
+            // 消したことを控えておく。ここを忘れると、目次で同じビートへ飛び直したとき
+            // 「前回と同じ濃さ・同じ位置」と判断されてスタイルが書かれず、カードが出てこない。
+            ref._o = 0;
+            ref._y = null;
           }
           continue;
         }
@@ -214,7 +225,7 @@ export class ScrollTracker {
       this.smooth += (raw - this.smooth) * (1 - Math.exp(-dt * DAMP));
     }
 
-    this._paintCards(ci, focus, vh);
+    this._paintCards(focus, vh);
     const interlude = this._paintInterludes(focus, vh);
 
     this.state = {

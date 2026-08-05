@@ -68,7 +68,9 @@ src/
 └ styles/main.css
 
 scripts/
-└ make-land-mask.mjs    海岸線データ → 陸地マスクの変換（再生成が必要なときだけ）
+├ make-land-mask.mjs    海岸線データ → 陸地マスクの変換（再生成が必要なときだけ）
+├ make-protein.mjs      AlphaFold 予測構造 → 主鎖の点列の変換（同上）
+└ make-crystal.mjs      GNoME 予測結晶の CIF → 原子座標と結合の変換（同上）
 ```
 
 ### 地球儀の陸地データ
@@ -79,6 +81,25 @@ scripts/
 [world-atlas](https://github.com/topojson/world-atlas) の `land-110m` を
 `scripts/make-land-mask.mjs` でビットマスクへ変換したものです。
 実行時にポリゴンの内外判定を回すと重いので、あらかじめ焼いてあります。
+
+### タンパク質の立体構造
+
+第13章「科学」に出てくる分子は、それらしく作った図形ではなく
+**AlphaFold が実際に予測した座標**（ヒト ヘモグロビンα鎖 / UniProt P69905）です。
+[AlphaFold Protein Structure Database](https://alphafold.ebi.ac.uk/entry/P69905) の
+`AF-P69905-F1`（CC-BY-4.0）から主鎖の Cα 142 残基を `scripts/make-protein.mjs` で抜き出し、
+`src/data/protein.js` に焼いてあります。表示はその点列を通す主鎖チューブで、
+色はN末端→C末端の位置を表します。
+
+### 結晶構造
+
+同じ第13章に並ぶ結晶も作り物の格子ではなく、DeepMind の
+[GNoME](https://github.com/google-deepmind/materials_discovery) が予測した
+**層状セレン化物 MgNb₈SnSe₁₆** の実際の原子座標です（CC-BY-4.0）。
+公開データは 450MB の zip ですが、中身は先頭から順に並んだ小さな CIF なので、
+`scripts/make-crystal.mjs` は先頭の数MBだけ Range 取得して目的の1件を取り出し、
+単位格子を 2×2×1 に並べて `src/data/crystal.js` に書き出します。
+色は元素、線は 3.05Å 以内の原子対（結合）です。
 
 シーンは乱数をシード固定し、`update(progress)` だけで見た目が決まるように書いてあります。
 スクロールを往復しても同じ絵に戻ります。

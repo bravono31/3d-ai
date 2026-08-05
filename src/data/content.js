@@ -602,6 +602,8 @@ export const references = {
         { t: "OpenAI's 'compromise' with the Pentagon is what Anthropic feared (MIT Tech Review)", u: 'https://www.technologyreview.com/2026/03/02/1133850/openais-compromise-with-the-pentagon-is-what-anthropic-feared/' },
         { t: 'AI for Scientific Discovery: The 2026 Guide', u: 'https://o-mega.ai/articles/ai-for-scientific-discovery-the-2026-guide' },
         { t: 'AI for Science in 2026: Real Breakthroughs vs. the Hype', u: 'https://www.fatherofai.in/blog/ai-for-science-2026-breakthroughs-vs-hype/' },
+        { t: 'AlphaFold Protein Structure Database — AF-P69905-F1（図に使った予測構造・CC-BY-4.0）', u: 'https://alphafold.ebi.ac.uk/entry/P69905' },
+        { t: 'GNoME — Scaling deep learning for materials discovery（図に使った結晶 MgNb8SnSe16 の出典・CC-BY-4.0）', u: 'https://github.com/google-deepmind/materials_discovery' },
       ],
     },
     {

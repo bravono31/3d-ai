@@ -94,104 +94,225 @@ export default class ComputeScene extends BaseScene {
     this.gPar.add(parTitle);
     this.parTitle = parTitle;
 
-    // ══════ 1: CUDA という堀
+    /*
+     * ══════ 1: CUDA という堀
+     *
+     * 中央の島に NVIDIA が立ち、その周りを深い溝が囲む。
+     * 溝はいま CUDA で埋まっていて、競合はその上に立ち、島とつながっている。
+     * ——という状態を見せたうえで、CUDA を引き抜く。
+     * 土台を失った四角は溝へ落ちる。堀の正体はチップではなくソフトだ、という話を
+     * 「抜いたらどうなるか」で見せる。
+     */
     this.gMoat = new THREE.Group();
     this.gMoat.visible = false;
+    this.gMoat.position.set(0.25, 0.15, 0);
     this.root.add(this.gMoat);
 
-    const tower = new THREE.Mesh(
-      new THREE.CylinderGeometry(0.95, 1.15, 2.6, 6),
-      new THREE.MeshBasicMaterial({ color: 0x76b900, transparent: true, opacity: 0.25 })
-    );
-    this.gMoat.add(tower);
-    this.tower = tower;
-    this.towerWire = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.CylinderGeometry(0.95, 1.15, 2.6, 6)),
-      new THREE.LineBasicMaterial({ color: 0x9ede3a, transparent: true })
-    );
-    this.gMoat.add(this.towerWire);
+    const R_ISLE = 1.2; //  島のふち
+    const R_OUT = 3.2; //   溝の外のふち
+    const R_BANK = 3.95; // 外の岸のはずれ
+    const R_RIVAL = 2.3; // 競合が立っている位置（溝の中）
+    const GY = -1.05; //    地面の高さ
+    const DEPTH = 1.3; //   溝の深さ
 
-    const nv = makeLabel('NVIDIA', { fontSize: 44, height: 0.42, color: '#9ede3a', weight: 800 });
-    nv.position.set(0, 1.85, 0);
-    this.gMoat.add(nv);
-    this.nvTag = nv;
+    /** 水平な輪郭線。溝のふちや底の形を示す。 */
+    const ring = (r, y, color, opacity, parent) => {
+      const pts = [];
+      for (let i = 0; i <= 84; i++) {
+        const a = (i / 84) * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.cos(a) * r, y, Math.sin(a) * r));
+      }
+      const l = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity })
+      );
+      (parent ?? this.gMoat).add(l);
+      return l;
+    };
+    /** 面。地面・島の上面・CUDAの水面に使う。 */
+    const disc = (inner, outer, y, color, opacity, parent) => {
+      const m = new THREE.Mesh(
+        new THREE.RingGeometry(inner, outer, 84),
+        new THREE.MeshBasicMaterial({
+          color,
+          transparent: true,
+          opacity,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        })
+      );
+      m.rotation.x = -Math.PI / 2;
+      m.position.y = y;
+      (parent ?? this.gMoat).add(m);
+      return m;
+    };
 
-    this.moat = new THREE.Mesh(
-      new THREE.TorusGeometry(2.5, 0.14, 10, 72),
-      new THREE.MeshBasicMaterial({ color: 0x76b900, transparent: true, opacity: 0.4 })
-    );
-    this.moat.rotation.x = Math.PI / 2;
-    this.gMoat.add(this.moat);
+    this.moatParts = [];
+    const part = (obj, base) => {
+      this.moatParts.push({ obj, base });
+      obj.material.opacity = 0;
+      return obj;
+    };
 
-    const cudaTag = makeLabel('CUDA — 20年積み上がった開発環境', {
-      fontSize: 32,
-      height: 0.28,
+    /** 溝の壁。内側から見える面だけ描くと、切り込んだ穴に見える。 */
+    const wall = (r, color, opacity, side) => {
+      const m = new THREE.Mesh(
+        new THREE.CylinderGeometry(r, r, DEPTH, 60, 1, true),
+        new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side, depthWrite: false })
+      );
+      m.position.y = GY - DEPTH / 2;
+      this.gMoat.add(m);
+      return m;
+    };
+
+    /** 崖の縦線。これが無いと、上から見た輪と見分けがつかない。 */
+    const cliff = (r, color, opacity) => {
+      const pts = [];
+      for (let i = 0; i < 48; i++) {
+        const a = (i / 48) * Math.PI * 2;
+        pts.push(new THREE.Vector3(Math.cos(a) * r, GY, Math.sin(a) * r));
+        pts.push(new THREE.Vector3(Math.cos(a) * r, GY - DEPTH, Math.sin(a) * r));
+      }
+      const l = new THREE.LineSegments(
+        new THREE.BufferGeometry().setFromPoints(pts),
+        new THREE.LineBasicMaterial({ color, transparent: true, opacity })
+      );
+      this.gMoat.add(l);
+      return l;
+    };
+
+    // 外の岸と、溝の底・壁
+    part(disc(R_OUT, R_BANK, GY, 0x243252, 0.6), 0.6);
+    part(disc(0, R_OUT, GY - DEPTH, 0x02040a, 0.98), 0.98);
+    part(wall(R_OUT, 0x070c16, 0.95, THREE.BackSide), 0.95); // 外側の崖（内から見た面）
+    part(wall(R_ISLE, 0x162209, 0.98, THREE.FrontSide), 0.98); // 島の崖
+    part(cliff(R_OUT, 0x53627e, 0.5), 0.5);
+    part(cliff(R_ISLE, 0x4c7a12, 0.55), 0.55);
+    part(ring(R_OUT, GY, 0x9fb0d0, 0.85), 0.85);
+    part(ring(R_ISLE, GY, 0x9ede3a, 0.9), 0.9);
+    part(ring(R_ISLE, GY - DEPTH, 0x4c7a12, 0.45), 0.45);
+
+    /*
+     * 溝を埋めている CUDA。まとめて上下できるよう、ひとつの群にして持つ。
+     * 引くときはこの群ごと沈めて薄くする。
+     */
+    this.gCuda = new THREE.Group();
+    this.gCuda.position.y = GY;
+    this.gMoat.add(this.gCuda);
+    this.cudaParts = [];
+    const cudaPart = (obj, base) => {
+      this.cudaParts.push({ obj, base });
+      return obj;
+    };
+    cudaPart(disc(R_ISLE + 0.02, R_OUT - 0.02, 0, 0x76b900, 0.34, this.gCuda), 0.34);
+    for (let k = 0; k < 5; k++) {
+      const r = lerp(R_ISLE + 0.18, R_OUT - 0.18, k / 4);
+      cudaPart(ring(r, 0.01, 0x9ede3a, 0.3, this.gCuda), 0.3);
+    }
+    this.cudaTag = makeLabel('CUDA が溝を埋めている', {
+      fontSize: 26,
+      height: 0.23,
       color: '#9ede3a',
       weight: 800,
     });
-    cudaTag.position.set(0, -1.9, 2.6);
-    this.gMoat.add(cudaTag);
-    this.cudaTag = cudaTag;
+    this.cudaTag.position.set(0, 0.3, -(R_OUT - 0.32));
+    this.gCuda.add(this.cudaTag);
 
+    // NVIDIA の島
+    part(disc(0, R_ISLE, GY, 0x16240a, 0.85), 0.85);
+    const tower = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.52, 0.66, 1.6, 6),
+      new THREE.MeshBasicMaterial({ color: 0x76b900, transparent: true, opacity: 0.25 })
+    );
+    tower.position.y = GY + 0.8;
+    this.gMoat.add(tower);
+    this.tower = tower;
+    this.towerWire = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.CylinderGeometry(0.52, 0.66, 1.6, 6)),
+      new THREE.LineBasicMaterial({ color: 0x9ede3a, transparent: true })
+    );
+    this.towerWire.position.copy(tower.position);
+    this.gMoat.add(this.towerWire);
+
+    const nv = makeLabel('NVIDIA', { fontSize: 42, height: 0.4, color: '#9ede3a', weight: 800 });
+    nv.position.set(0, GY + 1.95, 0);
+    this.gMoat.add(nv);
+    this.nvTag = nv;
+
+    // 島の上で回っている「世界中のAIコード」。すでに全部が内側にある。
+    this.codeChips = ['PyTorch', 'JAX', 'vLLM', 'cuDNN'].map((t, i) => {
+      const s = makeLabel(t, {
+        fontSize: 21,
+        height: 0.19,
+        color: '#0d1505',
+        bg: '#9ede3a',
+        border: '#9ede3a',
+        weight: 800,
+      });
+      s.userData.a = (i / 4) * Math.PI * 2;
+      this.gMoat.add(s);
+      return s;
+    });
+
+    // 競合は溝の中、CUDA の上に立っている。板でつながっているのも CUDA があるから。
     const rivals = [
-      { t: 'AMD MI400', s: 'HBM4 432GB\nメモリで勝負', c: 0xff6b6b, bridge: 0.72 },
-      { t: 'Google TPU', s: '外販せず\nクラウド内で', c: 0x5b9dff, bridge: 0.45 },
-      { t: 'AWS Trainium', s: '自社クラウド専用', c: 0xffd166, bridge: 0.42 },
-      { t: 'Microsoft Maia', s: '自社クラウド専用', c: 0xa78bfa, bridge: 0.38 },
+      { t: 'AMD MI400', s: 'HBM4 432GB / ROCm', c: 0xff6b6b, a: 0.42 },
+      { t: 'Google TPU', s: '外販せず自社クラウド内で', c: 0x5b9dff, a: 1.16 },
+      { t: 'AWS Trainium', s: '自社クラウド専用', c: 0xffd166, a: 1.98 },
+      { t: 'Microsoft Maia', s: '自社クラウド専用', c: 0xa78bfa, a: 2.72 },
     ];
-    this.rivals = rivals.map((r, i) => {
-      const a = Math.PI / 4 + (i / rivals.length) * Math.PI * 2;
-      const R = 3.75;
-      const x = Math.cos(a) * R;
-      const z = Math.sin(a) * R * 0.42;
+    this.rivals = rivals.map((r) => {
+      const x = Math.cos(r.a) * R_RIVAL;
+      const z = Math.sin(r.a) * R_RIVAL;
       const hex = '#' + new THREE.Color(r.c).getHexString();
 
       const g = new THREE.Group();
-      g.position.set(x, 0, z);
+      g.position.set(x, GY, z);
       const box = new THREE.Mesh(
-        new THREE.BoxGeometry(1.1, 1.5, 1.1),
+        new THREE.BoxGeometry(0.66, 0.72, 0.66),
         new THREE.MeshBasicMaterial({ color: r.c, transparent: true, opacity: 0.2 })
       );
+      box.position.y = 0.36;
       g.add(box);
       const wire = new THREE.LineSegments(
-        new THREE.EdgesGeometry(new THREE.BoxGeometry(1.1, 1.5, 1.1)),
+        new THREE.EdgesGeometry(new THREE.BoxGeometry(0.66, 0.72, 0.66)),
         new THREE.LineBasicMaterial({ color: r.c, transparent: true })
       );
+      wire.position.copy(box.position);
       g.add(wire);
-      const lb = makeLabel(r.t, { fontSize: 30, height: 0.28, color: hex, weight: 800 });
-      lb.position.set(0, 1.15, 0);
+      const lb = makeLabel(r.t, { fontSize: 26, height: 0.24, color: hex, weight: 800 });
+      lb.position.set(0, 1.24, 0);
       g.add(lb);
-      const sb = makeLabel(r.s, {
-        fontSize: 22,
-        height: r.s.includes('\n') ? 0.34 : 0.18,
-        color: '#9fb0d0',
-        weight: 600,
-        lineGap: 1.25,
-      });
-      sb.position.set(0, -1.1, 0);
+      const sb = makeLabel(r.s, { fontSize: 19, height: 0.16, color: '#9fb0d0', weight: 600 });
+      sb.position.set(0, 0.99, 0);
       g.add(sb);
       this.gMoat.add(g);
 
-      // 中心へ向かう「橋」。途切れている＝乗り換えられない
-      const from = new THREE.Vector3(x, 0, z);
-      const to = new THREE.Vector3(0, 0, 0);
-      const end = from.clone().lerp(to, r.bridge);
-      const bg = new THREE.BufferGeometry().setFromPoints([from, end]);
-      const bridge = new THREE.Line(
-        bg,
-        new THREE.LineDashedMaterial({
-          color: r.c,
-          transparent: true,
-          opacity: 0,
-          dashSize: 0.2,
-          gapSize: 0.16,
-        })
+      // CUDA の上に架かった板。島とつながっているのはこれのおかげ。
+      const span = R_RIVAL - R_ISLE;
+      const deck = new THREE.Mesh(
+        new THREE.BoxGeometry(span, 0.05, 0.3),
+        new THREE.MeshBasicMaterial({ color: r.c, transparent: true, opacity: 0 })
       );
-      bridge.computeLineDistances();
-      this.gMoat.add(bridge);
+      const mid = R_ISLE + span / 2;
+      deck.position.set(Math.cos(r.a) * mid, GY + 0.07, Math.sin(r.a) * mid);
+      deck.rotation.y = -r.a;
+      this.gMoat.add(deck);
 
-      return { g, box, wire, lb, sb, bridge };
+      return { g, box, wire, lb, sb, deck, a: r.a, x, z };
     });
+
+    this.moatCaptions = [
+      { t: 'いまは CUDA の上に全員が乗っている', c: '#9ede3a' },
+      { t: 'CUDA が無ければ、立つ土台も橋も残らない', c: '#ff8fa3' },
+    ].map((d) => {
+      const s = makeLabel(d.t, { fontSize: 30, height: 0.26, color: d.c, weight: 800 });
+      s.position.set(0, GY + 2.6, 0);
+      s.material.opacity = 0;
+      this.gMoat.add(s);
+      return s;
+    });
+    this.MOAT = { R_ISLE, R_OUT, R_RIVAL, GY, DEPTH };
 
     // ══════ 2-3: 蒸留
     this.gDist = new THREE.Group();
@@ -355,22 +476,80 @@ export default class ComputeScene extends BaseScene {
     this.gMoat.visible = bf > 0.8 && bf < 2.05;
     if (this.gMoat.visible) {
       const a = moatIn * (1 - moatOut);
-      this.tower.material.opacity = a * 0.25;
-      this.towerWire.material.opacity = a * 0.9;
-      this.nvTag.material.opacity = a;
-      this.cudaTag.material.opacity = a;
-      this.moat.material.opacity = a * (0.3 + Math.sin(time * 1.5) * 0.12);
-      this.moat.rotation.z = time * 0.12;
-      this.rivals.forEach((r, i) => {
-        const t = a * clamp(moatIn * 3 - i * 0.35);
-        r.box.material.opacity = t * 0.2;
-        r.wire.material.opacity = t * 0.8;
-        r.lb.material.opacity = t;
-        r.sb.material.opacity = t * 0.85;
-        r.bridge.material.opacity = t * 0.75;
+      const { GY, DEPTH } = this.MOAT;
+
+      /*
+       * CUDA を抜くところまでを一巡させる。
+       *   満ちている → CUDA が引く → 土台を失って落ちる → 暗転して元に戻る
+       * スクロールを止めていても回るよう、進行はスクロールではなく時間で決める。
+       */
+      const T = ((time + 2.0) % 10) / 10;
+      let drain = 0; // CUDA が引いた量
+      let fall = 0; //  競合が落ちた量
+      let vis = 1; //   競合の見え方（落ちきったら消して、元の位置で戻す）
+      if (T < 0.44) {
+        // 満ちている。まず「つながっている」状態を長めに見せる。
+      } else if (T < 0.6) {
+        drain = ease((T - 0.44) / 0.16);
+      } else if (T < 0.84) {
+        drain = 1;
+        fall = ease((T - 0.6) / 0.24);
+      } else if (T < 0.9) {
+        drain = 1;
+        fall = 1;
+        vis = 1 - (T - 0.84) / 0.06;
+      } else {
+        // CUDA が戻り、競合も元の位置に戻る（地形と島は消さない）
+        drain = 1 - ease((T - 0.9) / 0.1);
+        vis = (T - 0.9) / 0.1;
+      }
+      const live = a;
+
+      this.tower.material.opacity = live * 0.25;
+      this.towerWire.material.opacity = live * 0.9;
+      this.nvTag.material.opacity = live;
+      this.moatParts.forEach((m) => (m.obj.material.opacity = live * m.base));
+
+      // CUDA は群ごと沈めて薄くする
+      this.gCuda.position.y = GY - drain * (DEPTH - 0.06);
+      this.cudaParts.forEach((m) => (m.obj.material.opacity = live * m.base * (1 - drain)));
+      this.cudaTag.material.opacity = live * (1 - drain);
+
+      // 島の上を回るAIコード。すでに内側で動いているものたち。
+      this.codeChips.forEach((s, i) => {
+        const ang = s.userData.a + time * 0.35;
+        s.position.set(
+          Math.cos(ang) * 0.82,
+          GY + 0.4 + Math.sin(time * 1.1 + i) * 0.05,
+          Math.sin(ang) * 0.82
+        );
+        s.material.opacity = live * 0.95;
       });
-      this.gMoat.rotation.y = Math.sin(time * 0.1) * 0.14;
-      this.gMoat.rotation.x = 0.16;
+
+      this.rivals.forEach((r, i) => {
+        // 落ちる速さは少しずつずらす。同時に落ちると板が消えただけに見える。
+        const f = clamp(fall * 1.5 - i * 0.12);
+        const drop = f * f * (DEPTH + 0.45);
+        r.g.position.set(r.x, GY - drop, r.z);
+        r.g.rotation.set(f * 0.5, 0, f * 0.75);
+
+        const t = live * vis * clamp(moatIn * 3 - i * 0.35);
+        const sunk = 1 - f * 0.55; // 溝の底は暗い
+        r.box.material.opacity = t * 0.2 * sunk;
+        r.wire.material.opacity = t * 0.8 * sunk;
+        r.lb.material.opacity = t * sunk;
+        r.sb.material.opacity = t * (1 - f) * 0.85;
+        // 板は CUDA の上に載っているので、CUDA が引くと一緒に落ちて消える
+        r.deck.position.y = GY + 0.07 - drain * (DEPTH * 0.55);
+        r.deck.material.opacity = t * 0.85 * (1 - drain);
+      });
+
+      this.moatCaptions[0].material.opacity = live * clamp(1 - drain * 2.4);
+      this.moatCaptions[1].material.opacity = live * clamp(drain * 2.4 - 1.4);
+
+      // 少しだけ回して立体だと分かるようにする。上から見下ろす角度は固定。
+      this.gMoat.rotation.y = Math.sin(time * 0.08) * 0.1;
+      this.gMoat.rotation.x = 0.5;
     }
 
     // ── 蒸留

@@ -166,6 +166,8 @@ export default class AttentionScene extends BaseScene {
 
     // ══ グループ1：Q・K・V と注意行列
     this.gQKV = new THREE.Group();
+    // トークン列が上端、Q/K/V の3行が中央にあり、そのままだと下半分が空く
+    this.gQKV.position.y = -0.7;
     this.gQKV.visible = false;
     this.root.add(this.gQKV);
 
@@ -307,16 +309,32 @@ export default class AttentionScene extends BaseScene {
       this.gStack.add(wire);
       this.plates.push({ mesh, wire, y: mesh.position.y });
     }
-    this.stackLabels = [
-      { t: '単語', y: -2.5 },
-      { t: '句・係り受け', y: -0.9 },
-      { t: '文の意味', y: 0.7 },
-      { t: '話の流れ', y: 2.3 },
+    /*
+     * 「抽象度が上がる」だけでは何のことか分からないので、
+     * ビート1で見せたのと同じ文が、層ごとにどう読まれているかを実例で置く。
+     */
+    this.stackLevels = [
+      { i: 1, t: '単語', ex: '“cat” は名詞。動物を指す' },
+      { i: 4, t: '句・係り受け', ex: '“on the mat” でひとつの場所' },
+      { i: 7, t: '文の意味', ex: '猫がマットの上に座った' },
+      { i: 10, t: '話の流れ', ex: '眠ったのも、その猫' },
     ].map((d) => {
-      const s = makeLabel(d.t, { fontSize: 32, height: 0.26, color: '#9fb0d0', weight: 600 });
-      s.position.set(3.9, d.y, 0);
-      this.gStack.add(s);
-      return s;
+      const y = this.plates[d.i].y;
+      const name = makeLabel(d.t, { fontSize: 32, height: 0.26, color: '#9fb0d0', weight: 600 });
+      name.position.set(3.9, y, 0);
+      this.gStack.add(name);
+      // 例はその層の板の上に載せる（板より手前に置いて、上の板に隠れないように）
+      const ex = makeLabel(d.ex, {
+        fontSize: 26,
+        height: 0.23,
+        color: '#eaf3ff',
+        weight: 700,
+        bg: 'rgba(9,14,26,0.72)',
+        border: 'rgba(78,205,196,0.5)',
+      });
+      ex.position.set(-0.15, y + 0.2, 1.35);
+      this.gStack.add(ex);
+      return { name, ex, t: d.i / (LAYERS - 1) };
     });
     const stackTitle = makeLabel('層が上がるほど抽象度が上がる', {
       fontSize: 34,
@@ -405,7 +423,7 @@ export default class AttentionScene extends BaseScene {
       this.chainPulse.position.set(hx, 0, 0.05);
       this.chainPulse.material.opacity = (1 - attn) * a;
       this.seqLabels.forEach((l) => (l.material.opacity = a * 0.9));
-      this.gSeq.position.y = lerp(0, 1.2, out0);
+      this.gSeq.position.y = lerp(-1.4, -0.2, out0);
     }
 
     // ── ビート1：Q・K・V
@@ -520,7 +538,13 @@ export default class AttentionScene extends BaseScene {
         pl.wire.material.opacity = a * up * (0.28 + lit * 0.7);
         pl.mesh.material.color.setHSL(0.5, 0.55, 0.18 + lit * 0.4);
       });
-      this.stackLabels.forEach((s, i) => (s.material.opacity = a * clamp(stIn * 5 - i * 0.9)));
+      // 光が通り過ぎた層の例を強く出す。下から上へ、扱う単位が大きくなっていくのが見える。
+      this.stackLevels.forEach((lv, i) => {
+        const shown = a * clamp(stIn * 5 - i * 0.9);
+        const lit = Math.max(0, 1 - Math.abs(pulse - lv.t) * 4);
+        lv.name.material.opacity = shown * (0.55 + lit * 0.45);
+        lv.ex.material.opacity = shown * (0.42 + lit * 0.58);
+      });
       this.stackTitle.material.opacity = a;
       this.gStack.rotation.y = Math.sin(time * 0.18) * 0.22;
       this.gStack.rotation.x = -0.12;

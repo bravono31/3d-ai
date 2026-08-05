@@ -2,8 +2,6 @@ import * as THREE from 'three';
 import { BaseScene, seg, ease, easeOut, lerp, clamp, rng, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
 
-const SIGNERS = 1200;
-
 const NUKE = [
   { y: '1945', t: '核兵器の実用化' },
   { y: '1955', t: 'ラッセル＝アインシュタイン宣言' },
@@ -31,89 +29,169 @@ export default class FrontierScene extends BaseScene {
     const rand = rng(1955);
     this.camera.position.set(0, 0.3, 12);
 
-    // ══════ 0: 立ち上がる能力曲線と、1,200人の署名
-    this.gCurve = new THREE.Group();
-    this.root.add(this.gCurve);
+    /*
+     * ══════ 0: 誰が、何を求めたのか
+     *
+     * 伝えるのは2つ。
+     *   ① 声を上げたのが、外部の批判者ではなく作っている当事者だったこと
+     *   ② 求めたのが開発の停止ではなく、速度を落とせる「手段」の整備だったこと
+     * ①は人の形で、②は声明の中身をそのまま並べて示す。
+     * 点は本書では一貫してトークンやベクトルの意味で使っているので、人には使わない。
+     */
+    this.gVoice = new THREE.Group();
+    this.gVoice.position.set(0.35, -0.55, 0);
+    this.root.add(this.gVoice);
 
-    const pts = [];
-    for (let i = 0; i <= 120; i++) {
-      const t = i / 120;
-      const x = -5.2 + t * 10.4;
-      const y = -2.2 + Math.exp(t * 3.05) * 0.115;
-      pts.push(new THREE.Vector3(x, Math.min(y, 3.4), 0));
-    }
-    this.curve = new THREE.Line(
-      new THREE.BufferGeometry().setFromPoints(pts),
-      new THREE.LineBasicMaterial({ color: 0x4ecdc4, transparent: true })
-    );
-    this.gCurve.add(this.curve);
-    this.curvePts = pts;
-
-    const axG = new THREE.BufferGeometry();
-    axG.setAttribute(
-      'position',
-      new THREE.Float32BufferAttribute([-5.4, -2.4, 0, 5.4, -2.4, 0, -5.4, -2.4, 0, -5.4, 3.4, 0], 3)
-    );
-    this.axes = new THREE.LineSegments(
-      axG,
-      new THREE.LineBasicMaterial({ color: 0x3a4d70, transparent: true })
-    );
-    this.gCurve.add(this.axes);
-    this.axLabels = [
-      { t: '時間', x: 5.0, y: -2.75 },
-      { t: '能力', x: -5.1, y: 3.15 },
-    ].map((d) => {
-      const s = makeLabel(d.t, { fontSize: 24, height: 0.2, color: '#6b7b9c', weight: 700 });
-      s.position.set(d.x, d.y, 0);
-      this.gCurve.add(s);
-      return s;
-    });
-
-    // 署名の点群（1,200人）
-    const sp = new Float32Array(SIGNERS * 3);
-    this.signSeed = [];
-    for (let i = 0; i < SIGNERS; i++) {
-      const a = rand() * Math.PI * 2;
-      const r = Math.sqrt(rand()) * 1.5;
-      this.signSeed.push({
-        tx: 2.4 + Math.cos(a) * r * 1.5,
-        ty: 0.3 + Math.sin(a) * r,
-        fx: (rand() - 0.5) * 14,
-        fy: (rand() - 0.5) * 9,
-        d: rand(),
-      });
-    }
-    const sg = new THREE.BufferGeometry();
-    sg.setAttribute('position', new THREE.BufferAttribute(sp, 3));
-    this.signers = new THREE.Points(
-      sg,
-      new THREE.PointsMaterial({
-        color: 0xffd166,
-        size: 0.055,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
-      })
-    );
-    this.gCurve.add(this.signers);
-
-    this.curveTitle = makeLabel('Pacing the Frontier（2026-07-28）', {
-      fontSize: 38,
-      height: 0.34,
+    this.voiceTitle = makeLabel('Pacing the Frontier（2026-07-28）', {
+      fontSize: 36,
+      height: 0.32,
       color: '#ffd166',
       weight: 800,
     });
-    this.curveTitle.position.set(0, 3.9, 0);
-    this.gCurve.add(this.curveTitle);
-    this.curveSub = makeLabel(
-      'OpenAI・Anthropic・Google DeepMind・Meta の従業員 1,200人超が署名\n' +
-        '「今すぐ止めろ」ではなく「ペースを調整する手段を国際的に整えよ」',
-      { fontSize: 24, height: 0.42, color: '#c3d3ee', weight: 600, lineGap: 1.32 }
+    this.voiceTitle.position.set(0, 3.45, 0);
+    this.gVoice.add(this.voiceTitle);
+
+    // ── 署名した人たち。1体が10人。
+    const PER_LAB = 30;
+    const COLS = 5;
+    const DX = 0.17;
+    const DY = 0.33;
+    const CROWD_X = -2.55;
+    const CROWD_Y = 0.3;
+    const PITCH = 1.05;
+    const LABS = ['OpenAI', 'Anthropic', 'Google\nDeepMind', 'Meta'];
+    const N_FIG = PER_LAB * LABS.length;
+
+    this.figPos = [];
+    LABS.forEach((name, k) => {
+      const bx = CROWD_X + (k - (LABS.length - 1) / 2) * PITCH;
+      for (let i = 0; i < PER_LAB; i++) {
+        const c = i % COLS;
+        const r = Math.floor(i / COLS);
+        this.figPos.push({
+          x: bx + (c - (COLS - 1) / 2) * DX,
+          y: CROWD_Y + ((PER_LAB / COLS - 1) / 2 - r) * DY,
+          // 隊列が機械的に見えないよう、ごく少しだけ散らす
+          jx: (rand() - 0.5) * 0.035,
+          ph: rand() * Math.PI * 2,
+        });
+      }
+      const lb = makeLabel(name, {
+        fontSize: 19,
+        height: name.includes('\n') ? 0.3 : 0.17,
+        color: '#9fb6dd',
+        weight: 700,
+        lineGap: 1.3,
+      });
+      lb.position.set(bx, CROWD_Y - 1.18, 0);
+      lb.material.opacity = 0;
+      this.gVoice.add(lb);
+      this.figPos[this.figPos.length - 1].lab = lb;
+    });
+    this.labTags = LABS.map((_, k) => this.figPos[(k + 1) * PER_LAB - 1].lab);
+
+    const figMat = () => new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true });
+    this.figHead = new THREE.InstancedMesh(new THREE.SphereGeometry(0.05, 8, 6), figMat(), N_FIG);
+    this.figBody = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.028, 0.058, 0.15, 6),
+      figMat(),
+      N_FIG
     );
-    this.curveSub.position.set(0, -3.25, 0);
-    this.curveSub.material.opacity = 0;
-    this.gCurve.add(this.curveSub);
+    this.figHead.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.figBody.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.gVoice.add(this.figHead);
+    this.gVoice.add(this.figBody);
+    this._fm = new THREE.Matrix4();
+
+    this.crowdTag = makeLabel('署名したのは、作っているその人たち — 1,200人超（1体＝10人）', {
+      fontSize: 24,
+      height: 0.21,
+      color: '#ffd166',
+      weight: 800,
+    });
+    this.crowdTag.position.set(CROWD_X, CROWD_Y - 1.82, 0);
+    this.crowdTag.material.opacity = 0;
+    this.gVoice.add(this.crowdTag);
+
+    // ── 声明の中身
+    const PW = 3.95;
+    const PH = 3.3;
+    const PX = 2.45;
+    const PY = 0.65;
+    this.panelFill = new THREE.Mesh(
+      new THREE.PlaneGeometry(PW, PH),
+      new THREE.MeshBasicMaterial({ color: 0x121a2e, transparent: true, opacity: 0 })
+    );
+    this.panelFill.position.set(PX, PY, -0.04);
+    this.gVoice.add(this.panelFill);
+    this.panelWire = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.PlaneGeometry(PW, PH)),
+      new THREE.LineBasicMaterial({ color: 0x4ecdc4, transparent: true, opacity: 0 })
+    );
+    this.panelWire.position.copy(this.panelFill.position);
+    this.gVoice.add(this.panelWire);
+
+    const LEFT = PX - PW / 2 + 0.22;
+    /** 声明の中身は左揃えで積む。中央揃えだと箇条書きに見えない。 */
+    const line = (text, y, color, size, weight = 700) => {
+      const s = makeLabel(text, {
+        fontSize: size,
+        height: (size / 24) * 0.21 * (text.includes('\n') ? 2.3 : 1),
+        color,
+        weight,
+        lineGap: 1.32,
+      });
+      s.center.set(0, 0.5);
+      s.position.set(LEFT, y, 0);
+      s.material.opacity = 0;
+      this.gVoice.add(s);
+      return s;
+    };
+
+    this.panelHead = line('この声明が求めたこと', PY + 1.32, '#eaf3ff', 26, 800);
+    const divPts = [LEFT, PY + 1.05, 0, PX + PW / 2 - 0.22, PY + 1.05, 0];
+    const divG = new THREE.BufferGeometry();
+    divG.setAttribute('position', new THREE.Float32BufferAttribute(divPts, 3));
+    this.panelDiv = new THREE.Line(
+      divG,
+      new THREE.LineBasicMaterial({ color: 0x4ecdc4, transparent: true, opacity: 0 })
+    );
+    this.gVoice.add(this.panelDiv);
+
+    this.panelLines = [
+      line('○  AI開発の速度を意図的に調整するための\n　　技術と統治の道具を、国際的に整えること', PY + 0.5, '#4ecdc4', 23),
+      line('○  その整備を、米国政府が支援すること', PY - 0.3, '#4ecdc4', 23),
+      line('✕  いますぐ開発を止めること — とは言っていない', PY - 0.95, '#7a8699', 23),
+    ];
+    this.panelNote = line(
+      '背景にあるのは「AI研究そのものの自動化」への懸念',
+      PY - 1.42,
+      '#9fb6dd',
+      19,
+      600
+    );
+
+    // ── 人 → 声明 の矢印
+    const ax0 = CROWD_X + 2.05;
+    const ax1 = PX - PW / 2 - 0.12;
+    const ay = CROWD_Y;
+    const arrowPts = [ax0, ay, 0, ax1, ay, 0, ax1, ay, 0, ax1 - 0.16, ay + 0.1, 0, ax1, ay, 0, ax1 - 0.16, ay - 0.1, 0];
+    const arG = new THREE.BufferGeometry();
+    arG.setAttribute('position', new THREE.Float32BufferAttribute(arrowPts, 3));
+    this.signArrow = new THREE.LineSegments(
+      arG,
+      new THREE.LineBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0 })
+    );
+    this.gVoice.add(this.signArrow);
+    this.signArrowTag = makeLabel('署名', {
+      fontSize: 21,
+      height: 0.19,
+      color: '#ffd166',
+      weight: 800,
+    });
+    this.signArrowTag.position.set((ax0 + ax1) / 2, ay + 0.22, 0);
+    this.signArrowTag.material.opacity = 0;
+    this.gVoice.add(this.signArrowTag);
 
     // ══════ 1: 2本の年表
     this.gTime = new THREE.Group();
@@ -283,29 +361,48 @@ export default class FrontierScene extends BaseScene {
     const df = inAt(bf, 2) * (1 - outAt(bf, 3));
     const rg = inAt(bf, 3);
 
-    // ── 曲線と署名
-    this.gCurve.visible = bf < 1.05;
-    if (this.gCurve.visible) {
+    // ── 内側からの声
+    this.gVoice.visible = bf < 1.05;
+    if (this.gVoice.visible) {
       const a = 1 - outAt(bf, 1);
-      this.curve.geometry.setDrawRange(0, Math.max(2, Math.floor(this.curvePts.length * grow)));
-      this.curve.material.opacity = a * 0.95;
-      this.axes.material.opacity = a * 0.6;
-      this.axLabels.forEach((s) => (s.material.opacity = a * 0.8));
-      this.curveTitle.material.opacity = a * clamp(grow * 2);
-      this.curveSub.material.opacity = a * clamp(sign * 1.6 - 0.35);
+      this.voiceTitle.material.opacity = a * clamp(grow * 2);
 
-      const pos = this.signers.geometry.attributes.position.array;
-      for (let i = 0; i < SIGNERS; i++) {
-        const sd = this.signSeed[i];
-        const t = easeOut(clamp(sign * 2.2 - sd.d * 1.2));
-        pos[i * 3] = lerp(sd.fx, sd.tx, t);
-        pos[i * 3 + 1] = lerp(sd.fy, sd.ty, t) + Math.sin(time * 1.1 + sd.d * 9) * 0.04;
-        pos[i * 3 + 2] = (1 - t) * 3;
-      }
-      this.signers.geometry.attributes.position.needsUpdate = true;
-      this.signers.material.opacity = a * sign * 0.9;
+      /*
+       * 人は InstancedMesh なので個別に濃さを変えられない。
+       * 代わりに大きさで一人ずつ立ち上げ、そのあとは軽く揺らして生きている感じを出す。
+       */
+      const m = this._fm;
+      this.figPos.forEach((f, i) => {
+        const t = easeOut(clamp(grow * 2.6 - (i / this.figPos.length) * 1.4));
+        const bob = Math.sin(time * 1.3 + f.ph) * 0.012;
+        const x = f.x + f.jx;
+        m.makeTranslation(x, f.y + 0.135 + bob, 0);
+        m.scale(new THREE.Vector3(t, t, t));
+        this.figHead.setMatrixAt(i, m);
+        m.makeTranslation(x, f.y + bob, 0);
+        m.scale(new THREE.Vector3(t, t, t));
+        this.figBody.setMatrixAt(i, m);
+      });
+      this.figHead.instanceMatrix.needsUpdate = true;
+      this.figBody.instanceMatrix.needsUpdate = true;
+      this.figHead.material.opacity = a * 0.95;
+      this.figBody.material.opacity = a * 0.8;
+      this.labTags.forEach((s, k) => (s.material.opacity = a * clamp(grow * 3 - 0.6 - k * 0.15)));
+      this.crowdTag.material.opacity = a * clamp(grow * 2.4 - 1.0);
+
+      // 人が出そろってから、声明の中身を順に開く
+      const panel = clamp(sign * 1.8 - 0.4);
+      this.panelFill.material.opacity = a * panel * 0.75;
+      this.panelWire.material.opacity = a * panel * 0.55;
+      this.panelDiv.material.opacity = a * panel * 0.5;
+      this.panelHead.material.opacity = a * panel;
+      this.panelLines.forEach((s, i) => {
+        s.material.opacity = a * clamp(sign * 2.4 - 0.9 - i * 0.45);
+      });
+      this.panelNote.material.opacity = a * clamp(sign * 2.4 - 2.2);
+      this.signArrow.material.opacity = a * panel * 0.8;
+      this.signArrowTag.material.opacity = a * panel;
     }
-
     // ── 2本の年表
     this.gTime.visible = tl > 0.01;
     if (this.gTime.visible) {

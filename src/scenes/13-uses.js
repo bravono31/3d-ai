@@ -1,13 +1,15 @@
 import * as THREE from 'three';
-import { BaseScene, seg, ease, easeOut, lerp, clamp, rng, inAt, outAt } from '../core/BaseScene.js';
+import { BaseScene, seg, ease, easeOut, lerp, clamp, inAt, outAt } from '../core/BaseScene.js';
 import { makeLabel } from '../core/label.js';
+import { PROTEIN, CA } from '../data/protein.js';
+import { CRYSTAL, ATOMS, BONDS } from '../data/crystal.js';
 
-const HELIX_N = 180;
-const LATTICE = 4;
+/** 表示サイズ（どちらのデータも半径1に正規化してある） */
+const PROT_R = 1.2;
+const CRYSTAL_R = 1.05;
 
 export default class UsesScene extends BaseScene {
   build() {
-    const rand = rng(1618);
     this.camera.position.set(0, 0.2, 11.6);
 
     // ══════ 中央：ひとつの能力
@@ -31,79 +33,125 @@ export default class UsesScene extends BaseScene {
     this.gSci.position.set(-4.0, 0.4, 0);
     this.root.add(this.gSci);
 
-    // 二重らせん
-    const hp = new Float32Array(HELIX_N * 3);
-    const hc = new Float32Array(HELIX_N * 3);
-    const col = new THREE.Color();
-    for (let i = 0; i < HELIX_N; i++) {
-      const strand = i % 2;
-      const t = Math.floor(i / 2) / (HELIX_N / 2 - 1);
-      const a = t * Math.PI * 5 + strand * Math.PI;
-      hp[i * 3] = Math.cos(a) * 0.62;
-      hp[i * 3 + 1] = (t - 0.5) * 3.0;
-      hp[i * 3 + 2] = Math.sin(a) * 0.62;
-      col.setHSL(0.45 + strand * 0.08, 0.7, 0.55);
-      hc[i * 3] = col.r;
-      hc[i * 3 + 1] = col.g;
-      hc[i * 3 + 2] = col.b;
+    // ── タンパク質の立体構造
+    // 形はそれらしく作ったものではなく、AlphaFold が実際に予測した Cα の座標そのもの。
+    // 折りたたみの経路が読めるよう、N末端→C末端で色を変えた主鎖チューブにする。
+    const pts = [];
+    for (let i = 0; i < CA.length; i += 3) {
+      pts.push(new THREE.Vector3(CA[i], CA[i + 1], CA[i + 2]).multiplyScalar(PROT_R));
     }
-    const hg = new THREE.BufferGeometry();
-    hg.setAttribute('position', new THREE.BufferAttribute(hp, 3));
-    hg.setAttribute('color', new THREE.BufferAttribute(hc, 3));
-    this.helix = new THREE.Points(
-      hg,
-      new THREE.PointsMaterial({
-        size: 0.1,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0,
-        depthWrite: false,
-      })
+    const RINGS = pts.length * 6;
+    const RADIAL = 8;
+    const protGeo = new THREE.TubeGeometry(
+      new THREE.CatmullRomCurve3(pts),
+      RINGS,
+      0.072,
+      RADIAL,
+      false
     );
-    this.helix.position.set(-1.0, 0, 0);
-    this.gSci.add(this.helix);
+    // 頂点はチューブの輪ごとに並ぶので、輪の番号から鎖に沿った位置が出る
+    const pc = new Float32Array(protGeo.attributes.position.count * 3);
+    const col = new THREE.Color();
+    for (let v = 0; v < pc.length / 3; v++) {
+      col.setHSL(0.63 - 0.63 * (Math.floor(v / (RADIAL + 1)) / RINGS), 0.72, 0.58);
+      pc[v * 3] = col.r;
+      pc[v * 3 + 1] = col.g;
+      pc[v * 3 + 2] = col.b;
+    }
+    protGeo.setAttribute('color', new THREE.BufferAttribute(pc, 3));
 
-    // 結晶格子
-    const latGeo = new THREE.SphereGeometry(0.075, 8, 6);
-    this.lattice = new THREE.InstancedMesh(
-      latGeo,
-      new THREE.MeshBasicMaterial({ color: 0x7ee081, transparent: true }),
-      LATTICE ** 3
+    // 立体感を出すためここだけ陰影をつける（他は MeshBasicMaterial なので影響しない）
+    this.scene.add(new THREE.AmbientLight(0xffffff, 1.0));
+    const key = new THREE.DirectionalLight(0xffffff, 1.5);
+    key.position.set(2, 3, 4);
+    this.scene.add(key);
+    const fill = new THREE.DirectionalLight(0x8fb4ff, 0.6);
+    fill.position.set(-3, -1, -2);
+    this.scene.add(fill);
+
+    this.protein = new THREE.Mesh(
+      protGeo,
+      new THREE.MeshLambertMaterial({ vertexColors: true, transparent: true, opacity: 0 })
+    );
+    this.protein.position.set(-1.25, 0.15, 0);
+    this.protein.rotation.x = -0.28;
+    this.gSci.add(this.protein);
+    this.protIndex = protGeo.index.count;
+
+    this.protTag = makeLabel(
+      `ヒト ヘモグロビンα鎖（${PROTEIN.id}・${PROTEIN.residues}残基）\nAlphaFold 予測構造 ${PROTEIN.model} ／ pLDDT ${PROTEIN.plddt}`,
+      { fontSize: 20, height: 0.29, color: '#9fb6dd', weight: 600, lineGap: 1.35 }
+    );
+    this.protTag.position.set(-1.25, -1.42, 0);
+    this.protTag.material.opacity = 0;
+    this.gSci.add(this.protTag);
+
+    /*
+     * ── 結晶構造
+     * こちらも作り物の格子ではなく、GNoME が予測した実際の結晶
+     * （層状セレン化物 MgNb8SnSe16）の原子座標。
+     * 単なる立方格子と違い、層になって重なっているのが見える。
+     */
+    const elStyle = {
+      Se: { c: 0xffb454, r: 0.062 }, // セレン
+      Nb: { c: 0x7ee081, r: 0.075 }, // ニオブ
+      Sn: { c: 0xc9d6ee, r: 0.082 }, // スズ
+      Mg: { c: 0x6fd3ff, r: 0.07 }, //  マグネシウム
+    };
+    this.crystal = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(1, 10, 8),
+      new THREE.MeshBasicMaterial({ transparent: true }),
+      ATOMS.length
+    );
+    this.crystal.instanceColor = new THREE.InstancedBufferAttribute(
+      new Float32Array(ATOMS.length * 3),
+      3
     );
     const m = new THREE.Matrix4();
-    let k = 0;
-    for (let x = 0; x < LATTICE; x++)
-      for (let y = 0; y < LATTICE; y++)
-        for (let z = 0; z < LATTICE; z++) {
-          m.makeTranslation(
-            (x - (LATTICE - 1) / 2) * 0.42,
-            (y - (LATTICE - 1) / 2) * 0.42,
-            (z - (LATTICE - 1) / 2) * 0.42
-          );
-          this.lattice.setMatrixAt(k++, m);
-        }
-    this.lattice.instanceMatrix.needsUpdate = true;
-    this.lattice.position.set(1.05, 0.55, 0);
-    this.gSci.add(this.lattice);
+    ATOMS.forEach(([el, x, y, z], i) => {
+      const st = elStyle[el] ?? { c: 0x9fb0d0, r: 0.07 };
+      m.makeTranslation(x * CRYSTAL_R, y * CRYSTAL_R, z * CRYSTAL_R);
+      m.scale(new THREE.Vector3(st.r, st.r, st.r));
+      this.crystal.setMatrixAt(i, m);
+      this.crystal.setColorAt(i, col.setHex(st.c));
+    });
+    this.crystal.instanceMatrix.needsUpdate = true;
+    this.crystal.instanceColor.needsUpdate = true;
+    /*
+     * データの z 軸が c 軸（層に垂直）。そのままだと層をま横から見ることになり、
+     * ただの点の列にしか見えないので、c を上に向けてから回す。
+     * 回す軸を上向きに保つため、傾ける群と中身を分けている。
+     */
+    this.crystal.rotation.x = -Math.PI / 2;
+    this.gCrystal = new THREE.Group();
+    this.gCrystal.position.set(1.5, 1.08, 0);
+    this.gCrystal.add(this.crystal);
+    this.gSci.add(this.gCrystal);
 
-    // 格子の骨組み
-    const lp = [];
-    const at = (i) => (i - (LATTICE - 1) / 2) * 0.42;
-    for (let x = 0; x < LATTICE; x++)
-      for (let y = 0; y < LATTICE; y++)
-        for (let z = 0; z < LATTICE; z++) {
-          if (x < LATTICE - 1) lp.push(at(x), at(y), at(z), at(x + 1), at(y), at(z));
-          if (y < LATTICE - 1) lp.push(at(x), at(y), at(z), at(x), at(y + 1), at(z));
-          if (z < LATTICE - 1) lp.push(at(x), at(y), at(z), at(x), at(y), at(z + 1));
-        }
+    // 結合。層のつながりはこれが無いと見えない。
+    const bp = [];
+    for (let i = 0; i < BONDS.length; i += 2) {
+      for (const k of [BONDS[i], BONDS[i + 1]]) {
+        bp.push(ATOMS[k][1] * CRYSTAL_R, ATOMS[k][2] * CRYSTAL_R, ATOMS[k][3] * CRYSTAL_R);
+      }
+    }
     const lg = new THREE.BufferGeometry();
-    lg.setAttribute('position', new THREE.Float32BufferAttribute(lp, 3));
-    this.latticeWire = new THREE.LineSegments(
+    lg.setAttribute('position', new THREE.Float32BufferAttribute(bp, 3));
+    this.crystalWire = new THREE.LineSegments(
       lg,
-      new THREE.LineBasicMaterial({ color: 0x7ee081, transparent: true, opacity: 0 })
+      new THREE.LineBasicMaterial({ color: 0xbfe9a8, transparent: true, opacity: 0 })
     );
-    this.latticeWire.position.copy(this.lattice.position);
-    this.gSci.add(this.latticeWire);
+    this.crystalWire.rotation.x = -Math.PI / 2;
+    this.gCrystal.add(this.crystalWire);
+
+    this.crystalTag = makeLabel(
+      `GNoME 予測 ${CRYSTAL.name}\n層状セレン化物・${CRYSTAL.sitesPerCell}原子/単位格子`,
+      { fontSize: 19, height: 0.27, color: '#9fb6dd', weight: 600, lineGap: 1.35 }
+    );
+    // 説明はタンパク質側と同じ高さに揃える（結晶の真下は原子で埋まっている）
+    this.crystalTag.position.set(2.05, -1.42, 0);
+    this.crystalTag.material.opacity = 0;
+    this.gSci.add(this.crystalTag);
 
     this.sciTitle = makeLabel('科学', { fontSize: 54, height: 0.5, color: '#7ee081', weight: 800 });
     this.sciTitle.position.set(0, 2.35, 0);
@@ -208,14 +256,16 @@ export default class UsesScene extends BaseScene {
     this.core.scale.setScalar(1 + dual * 0.35 + Math.sin(time * 2) * 0.04);
     this.coreTag.material.opacity = dual;
 
-    // 科学
-    this.helix.material.opacity = sci * 0.95;
-    this.helix.rotation.y = time * 0.4;
-    this.lattice.material.opacity = sci * 0.9;
-    this.latticeWire.material.opacity = sci * 0.35;
-    this.lattice.rotation.y = time * 0.22;
-    this.lattice.rotation.x = time * 0.14;
-    this.latticeWire.rotation.copy(this.lattice.rotation);
+    // 科学。折りたたみが N末端から伸びていくように、鎖の順に描き足す
+    this.protein.material.opacity = sci;
+    this.protein.geometry.setDrawRange(0, Math.ceil(this.protIndex * sci));
+    this.protein.rotation.y = time * 0.32;
+    this.protTag.material.opacity = sci * 0.9;
+    this.crystal.material.opacity = sci * 0.95;
+    this.crystalWire.material.opacity = sci * 0.6;
+    // 層が重なって見えるよう、少し上から覗き込む角度で回す
+    this.gCrystal.rotation.set(0.34, time * 0.24, 0);
+    this.crystalTag.material.opacity = sci * 0.9;
     this.sciTitle.material.opacity = sci;
     this.sciFacts.forEach((s, i) => (s.material.opacity = clamp(sci * 2.4 - i * 0.35)));
     this.gSci.position.x = lerp(-1.4, -4.0, Math.max(mil, dual));
