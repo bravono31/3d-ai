@@ -30,168 +30,340 @@ export default class FrontierScene extends BaseScene {
     this.camera.position.set(0, 0.3, 12);
 
     /*
-     * ══════ 0: 誰が、何を求めたのか
+     * ══════ 0: 何を求めたのか（車の運転で言う）
      *
-     * 伝えるのは2つ。
-     *   ① 声を上げたのが、外部の批判者ではなく作っている当事者だったこと
-     *   ② 求めたのが開発の停止ではなく、速度を落とせる「手段」の整備だったこと
-     * ①は人の形で、②は声明の中身をそのまま並べて示す。
-     * 点は本書では一貫してトークンやベクトルの意味で使っているので、人には使わない。
+     * 声明の要旨はカードの本文にある。同じ文章を3D側に並べても意味がない。
+     * 図の役目は、文章だと平板になる「操作と結果の関係」を動かして見せること。
+     *   アクセルの踏み加減 → タイヤの回転 → 速度計、が連動して上下する。
+     *   これが求めているもの。ただしそのペダルはまだ無いので破線で描く。
+     *   ブレーキを踏めば確かに止まるが、求めているのはそれではない。
+     * 署名した人数は補足なので、下端に小さな群衆として置くだけにする。
      */
     this.gVoice = new THREE.Group();
-    this.gVoice.position.set(0.35, -0.55, 0);
+    this.gVoice.position.set(0.7, 0.1, 0);
     this.root.add(this.gVoice);
 
-    this.voiceTitle = makeLabel('Pacing the Frontier（2026-07-28）', {
-      fontSize: 36,
-      height: 0.32,
-      color: '#ffd166',
-      weight: 800,
-    });
-    this.voiceTitle.position.set(0, 3.45, 0);
-    this.gVoice.add(this.voiceTitle);
-
-    // ── 署名した人たち。1体が10人。
-    const PER_LAB = 30;
-    const COLS = 5;
-    const DX = 0.17;
-    const DY = 0.33;
-    const CROWD_X = -2.55;
-    const CROWD_Y = 0.3;
-    const PITCH = 1.05;
-    const LABS = ['OpenAI', 'Anthropic', 'Google\nDeepMind', 'Meta'];
-    const N_FIG = PER_LAB * LABS.length;
-
-    this.figPos = [];
-    LABS.forEach((name, k) => {
-      const bx = CROWD_X + (k - (LABS.length - 1) / 2) * PITCH;
-      for (let i = 0; i < PER_LAB; i++) {
-        const c = i % COLS;
-        const r = Math.floor(i / COLS);
-        this.figPos.push({
-          x: bx + (c - (COLS - 1) / 2) * DX,
-          y: CROWD_Y + ((PER_LAB / COLS - 1) / 2 - r) * DY,
-          // 隊列が機械的に見えないよう、ごく少しだけ散らす
-          jx: (rand() - 0.5) * 0.035,
-          ph: rand() * Math.PI * 2,
-        });
-      }
-      const lb = makeLabel(name, {
-        fontSize: 19,
-        height: name.includes('\n') ? 0.3 : 0.17,
-        color: '#9fb6dd',
-        weight: 700,
-        lineGap: 1.3,
+    const dashMat = (color, dash = 0.11) =>
+      new THREE.LineDashedMaterial({
+        color,
+        transparent: true,
+        opacity: 0,
+        dashSize: dash,
+        gapSize: dash * 0.8,
       });
-      lb.position.set(bx, CROWD_Y - 1.18, 0);
-      lb.material.opacity = 0;
-      this.gVoice.add(lb);
-      this.figPos[this.figPos.length - 1].lab = lb;
-    });
-    this.labTags = LABS.map((_, k) => this.figPos[(k + 1) * PER_LAB - 1].lab);
+    const solidMat = (color) =>
+      new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0 });
 
-    const figMat = () => new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true });
-    this.figHead = new THREE.InstancedMesh(new THREE.SphereGeometry(0.05, 8, 6), figMat(), N_FIG);
-    this.figBody = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.028, 0.058, 0.15, 6),
-      figMat(),
-      N_FIG
-    );
-    this.figHead.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.figBody.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    this.gVoice.add(this.figHead);
-    this.gVoice.add(this.figBody);
-    this._fm = new THREE.Matrix4();
-
-    this.crowdTag = makeLabel('署名したのは、作っているその人たち — 1,200人超（1体＝10人）', {
-      fontSize: 24,
-      height: 0.21,
-      color: '#ffd166',
-      weight: 800,
-    });
-    this.crowdTag.position.set(CROWD_X, CROWD_Y - 1.82, 0);
-    this.crowdTag.material.opacity = 0;
-    this.gVoice.add(this.crowdTag);
-
-    // ── 声明の中身
-    const PW = 3.95;
-    const PH = 3.3;
-    const PX = 2.45;
-    const PY = 0.65;
-    this.panelFill = new THREE.Mesh(
-      new THREE.PlaneGeometry(PW, PH),
-      new THREE.MeshBasicMaterial({ color: 0x121a2e, transparent: true, opacity: 0 })
-    );
-    this.panelFill.position.set(PX, PY, -0.04);
-    this.gVoice.add(this.panelFill);
-    this.panelWire = new THREE.LineSegments(
-      new THREE.EdgesGeometry(new THREE.PlaneGeometry(PW, PH)),
-      new THREE.LineBasicMaterial({ color: 0x4ecdc4, transparent: true, opacity: 0 })
-    );
-    this.panelWire.position.copy(this.panelFill.position);
-    this.gVoice.add(this.panelWire);
-
-    const LEFT = PX - PW / 2 + 0.22;
-    /** 声明の中身は左揃えで積む。中央揃えだと箇条書きに見えない。 */
-    const line = (text, y, color, size, weight = 700) => {
+    /** 四角の枠。破線にすると「まだ無いもの」を表せる。 */
+    const rect = (w, h, x, y, mat) => {
+      const hw = w / 2;
+      const hh = h / 2;
+      const pts = [
+        [-hw, -hh], [hw, -hh], [hw, -hh], [hw, hh],
+        [hw, hh], [-hw, hh], [-hw, hh], [-hw, -hh],
+      ].flatMap(([px, py]) => [px + x, py + y, 0]);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      const l = new THREE.LineSegments(g, mat);
+      l.computeLineDistances();
+      this.gVoice.add(l);
+      return l;
+    };
+    const arrow = (x1, y1, x2, y2, color) => {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      const len = Math.hypot(dx, dy) || 1;
+      const ux = dx / len;
+      const uy = dy / len;
+      const h = 0.12;
+      const pts = [
+        x1, y1, 0, x2, y2, 0,
+        x2, y2, 0, x2 - ux * h + uy * h * 0.6, y2 - uy * h - ux * h * 0.6, 0,
+        x2, y2, 0, x2 - ux * h - uy * h * 0.6, y2 - uy * h + ux * h * 0.6, 0,
+      ];
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+      const l = new THREE.LineSegments(g, solidMat(color));
+      this.gVoice.add(l);
+      return l;
+    };
+    const tag = (text, x, y, color, size, weight = 700) => {
       const s = makeLabel(text, {
         fontSize: size,
         height: (size / 24) * 0.21 * (text.includes('\n') ? 2.3 : 1),
         color,
         weight,
-        lineGap: 1.32,
+        lineGap: 1.3,
       });
-      s.center.set(0, 0.5);
-      s.position.set(LEFT, y, 0);
+      s.position.set(x, y, 0.02);
       s.material.opacity = 0;
       this.gVoice.add(s);
       return s;
     };
 
-    this.panelHead = line('この声明が求めたこと', PY + 1.32, '#eaf3ff', 26, 800);
-    const divPts = [LEFT, PY + 1.05, 0, PX + PW / 2 - 0.22, PY + 1.05, 0];
-    const divG = new THREE.BufferGeometry();
-    divG.setAttribute('position', new THREE.Float32BufferAttribute(divPts, 3));
-    this.panelDiv = new THREE.Line(
-      divG,
-      new THREE.LineBasicMaterial({ color: 0x4ecdc4, transparent: true, opacity: 0 })
-    );
-    this.gVoice.add(this.panelDiv);
+    // ══ 速度計
+    const GX = -2.3;
+    const GY = 1.75;
+    const GR = 1.0;
+    this.GAUGE = { GX, GY, GR };
+    const A0 = (200 * Math.PI) / 180;
+    const A1 = (-20 * Math.PI) / 180;
+    this.gaugeArcs = [
+      { from: 0.0, to: 0.42, c: 0x4ecdc4 },
+      { from: 0.42, to: 0.74, c: 0xffd166 },
+      { from: 0.74, to: 1.0, c: 0xff6b6b },
+    ].map((z) => {
+      const pts = [];
+      for (let i = 0; i <= 24; i++) {
+        const a = lerp(A0, A1, lerp(z.from, z.to, i / 24));
+        pts.push(new THREE.Vector3(GX + Math.cos(a) * GR, GY + Math.sin(a) * GR, 0));
+      }
+      const l = new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), solidMat(z.c));
+      this.gVoice.add(l);
+      return l;
+    });
+    const tk = [];
+    for (let i = 0; i <= 11; i++) {
+      const a = lerp(A0, A1, i / 11);
+      const r0 = GR - (i % 2 ? 0.07 : 0.13);
+      tk.push(
+        GX + Math.cos(a) * r0, GY + Math.sin(a) * r0, 0,
+        GX + Math.cos(a) * (GR - 0.01), GY + Math.sin(a) * (GR - 0.01), 0
+      );
+    }
+    const tkG = new THREE.BufferGeometry();
+    tkG.setAttribute('position', new THREE.Float32BufferAttribute(tk, 3));
+    this.gaugeTicks = new THREE.LineSegments(tkG, solidMat(0x6b7b9c));
+    this.gVoice.add(this.gaugeTicks);
 
-    this.panelLines = [
-      line('○  AI開発の速度を意図的に調整するための\n　　技術と統治の道具を、国際的に整えること', PY + 0.5, '#4ecdc4', 23),
-      line('○  その整備を、米国政府が支援すること', PY - 0.3, '#4ecdc4', 23),
-      line('✕  いますぐ開発を止めること — とは言っていない', PY - 0.95, '#7a8699', 23),
-    ];
-    this.panelNote = line(
-      '背景にあるのは「AI研究そのものの自動化」への懸念',
-      PY - 1.42,
+    const ndG = new THREE.BufferGeometry();
+    ndG.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 0, 0, 0], 3));
+    this.needle = new THREE.Line(ndG, solidMat(0xff6b6b));
+    this.gVoice.add(this.needle);
+    this.needleHub = new THREE.Mesh(
+      new THREE.CircleGeometry(0.07, 16),
+      new THREE.MeshBasicMaterial({ color: 0xff6b6b, transparent: true, opacity: 0 })
+    );
+    this.needleHub.position.set(GX, GY, 0.01);
+    this.gVoice.add(this.needleHub);
+    this.gaugeTag = tag('AI開発の速度', GX, GY - 0.36, '#eaf3ff', 24, 800);
+
+    // ══ コンセプトカー（側面のシルエット）
+    const CX = 1.95;
+    const CY = 1.9;
+    this.CAR = { CX, CY };
+    const body = new THREE.Shape();
+    body.moveTo(-1.52, -0.1);
+    body.quadraticCurveTo(-1.58, 0.02, -1.34, 0.07);
+    body.lineTo(-0.74, 0.17);
+    body.quadraticCurveTo(-0.3, 0.23, 0.0, 0.5);
+    body.quadraticCurveTo(0.34, 0.68, 0.86, 0.55);
+    body.quadraticCurveTo(1.3, 0.43, 1.48, 0.08);
+    body.lineTo(1.44, -0.1);
+    body.closePath();
+    this.carFill = new THREE.Mesh(
+      new THREE.ShapeGeometry(body),
+      new THREE.MeshBasicMaterial({ color: 0x14304a, transparent: true, opacity: 0 })
+    );
+    this.carLine = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(body.getPoints(64)),
+      solidMat(0x6fd3ff)
+    );
+    // 未来的に見せるための光る一本線（グラスハウスの下端）
+    const glass = [];
+    for (let i = 0; i <= 20; i++) {
+      const t = i / 20;
+      glass.push(new THREE.Vector3(lerp(-0.55, 1.12, t), lerp(0.17, 0.36, Math.sin(t * Math.PI * 0.6)), 0.01));
+    }
+    this.carGlass = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(glass),
+      solidMat(0x9fe8e2)
+    );
+    // 前端の光るライトバー。未来的なコンセプトカーらしさはここで出す。
+    const lampG = new THREE.BufferGeometry();
+    lampG.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute([-1.46, 0.0, 0.02, -1.02, 0.07, 0.02], 3)
+    );
+    this.carLamp = new THREE.Line(lampG, solidMat(0xdff6f3));
+
+    this.gCar = new THREE.Group();
+    this.gCar.position.set(CX, CY, 0);
+    this.gCar.add(this.carFill, this.carLine, this.carGlass, this.carLamp);
+    this.gVoice.add(this.gCar);
+
+    // タイヤ。回転が見えるようスポークを入れる。
+    this.wheels = [-0.86, 0.88].map((wx) => {
+      const g = new THREE.Group();
+      g.position.set(wx, -0.28, 0.02);
+      const rimPts = [];
+      for (let i = 0; i <= 36; i++) {
+        const a = (i / 36) * Math.PI * 2;
+        rimPts.push(new THREE.Vector3(Math.cos(a) * 0.26, Math.sin(a) * 0.26, 0));
+      }
+      const rim = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(rimPts),
+        solidMat(0x9fb6dd)
+      );
+      g.add(rim);
+      const sp = [];
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2;
+        sp.push(0, 0, 0, Math.cos(a) * 0.23, Math.sin(a) * 0.23, 0);
+      }
+      const spG = new THREE.BufferGeometry();
+      spG.setAttribute('position', new THREE.Float32BufferAttribute(sp, 3));
+      const spokes = new THREE.LineSegments(spG, solidMat(0x6fd3ff));
+      g.add(spokes);
+      this.gCar.add(g);
+      return { g, rim, spokes };
+    });
+
+    const roadY = CY - 0.54;
+    const rdG = new THREE.BufferGeometry();
+    rdG.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute([CX - 2.3, roadY, 0, CX + 2.2, roadY, 0], 3)
+    );
+    this.road = new THREE.Line(rdG, solidMat(0x3a4d70));
+    this.gVoice.add(this.road);
+
+    // 速いときに後ろへ流れる線
+    const mlPts = [];
+    for (let i = 0; i < 4; i++) {
+      const y = CY - 0.1 + i * 0.16;
+      mlPts.push(CX - 2.15 - i * 0.1, y, 0, CX - 1.6 - i * 0.1, y, 0);
+    }
+    const mlG = new THREE.BufferGeometry();
+    mlG.setAttribute('position', new THREE.Float32BufferAttribute(mlPts, 3));
+    this.motion = new THREE.LineSegments(mlG, solidMat(0x9fe8e2));
+    this.gVoice.add(this.motion);
+
+    // ブレーキで止まるときのスリップ痕
+    const skG = new THREE.BufferGeometry();
+    skG.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(
+        [CX - 1.9, roadY - 0.03, 0, CX - 0.9, roadY - 0.03, 0, CX - 0.2, roadY - 0.03, 0, CX + 0.85, roadY - 0.03, 0],
+        3
+      )
+    );
+    this.skid = new THREE.LineSegments(skG, solidMat(0xff8fa3));
+    this.gVoice.add(this.skid);
+
+    /** ペダル。ピボットから板が垂れ、踏むと寝る。 */
+    const pedal = (x, mat, plateColor) => {
+      const g = new THREE.Group();
+      g.position.set(x, -0.2, 0);
+      const plate = rect(0.24, 0.62, 0, -0.31, mat);
+      plate.geometry.translate(0, 0.31, 0); // 回転の中心をピボットへ
+      plate.position.set(0, 0, 0);
+      this.gVoice.remove(plate);
+      g.add(plate);
+      const arm = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints([
+          new THREE.Vector3(0, 0, 0),
+          new THREE.Vector3(0, -0.31, 0),
+        ]),
+        solidMat(plateColor)
+      );
+      g.add(arm);
+      // 蝶番。ここを支点に回っていることが分かるように点を打つ。
+      const hinge = new THREE.Mesh(
+        new THREE.CircleGeometry(0.045, 12),
+        new THREE.MeshBasicMaterial({ color: plateColor, transparent: true, opacity: 0 })
+      );
+      g.add(hinge);
+      this.gVoice.add(g);
+      const floorG = new THREE.BufferGeometry();
+      floorG.setAttribute(
+        'position',
+        new THREE.Float32BufferAttribute([x - 0.42, -0.92, 0, x + 0.42, -0.92, 0], 3)
+      );
+      const floor = new THREE.Line(floorG, solidMat(0x53627e));
+      this.gVoice.add(floor);
+      return { g, plate, arm, floor, hinge };
+    };
+
+    const AX = 0.75;
+    const BX = 2.95;
+    this.accel = pedal(AX, dashMat(0x4ecdc4), 0x4ecdc4);
+    this.brake = pedal(BX, solidMat(0x7a8699), 0x7a8699);
+
+    this.accelTag = tag('アクセル', AX, -1.45, '#4ecdc4', 23, 800);
+    this.accelNote = tag('○ 踏み加減で速度を上下できる状態', AX, -1.78, '#4ecdc4', 19, 700);
+    this.accelGhost = tag('（このペダルはまだ無い）', AX, -2.08, '#9fb6dd', 17, 600);
+    this.brakeTag = tag('ブレーキ', BX, -1.45, '#9fb6dd', 23, 800);
+    this.brakeNote = tag('✕ いますぐ止める — 求めていない', BX, -1.78, '#ff8fa3', 19, 700);
+
+    // ペダルを作るのに要る2つの道具
+    this.tools = [];
+    this.toolTags = [];
+    [
+      { t: '技術の道具', s: '能力評価・監査・停止手順', y: -0.5 },
+      { t: '統治の道具', s: '合意・条約・査察の枠組み', y: -1.24 },
+    ].forEach((d) => {
+      this.tools.push(rect(2.1, 0.56, GX, d.y, dashMat(0x4ecdc4)));
+      this.toolTags.push(tag(d.t, GX, d.y + 0.11, '#dff6f3', 19, 800));
+      this.toolTags.push(tag(d.s, GX, d.y - 0.16, '#9fb6dd', 14, 600));
+    });
+    this.tools.push(arrow(GX + 1.12, -0.86, AX - 0.55, -0.5, 0x4ecdc4));
+    this.toolsTag = tag('この2つを国際的に整えるのが要求', GX, -1.78, '#4ecdc4', 19, 800);
+
+    // 踏んだ結果がタイヤに出る、という対応だけ短い矢印で示す
+    this.linkAccel = arrow(AX, 0.22, CX - 0.86, CY - 0.86, 0x4ecdc4);
+
+    // ══ 署名者（補足）。整列ではなく、かたまりとして置く。
+    const N_FIG = 150;
+    const F_SC = 0.4;
+    this.figPos = [];
+    for (let i = 0; i < N_FIG; i++) {
+      const a = rand() * Math.PI * 2;
+      const r = Math.sqrt(rand());
+      this.figPos.push({
+        x: 0.35 + Math.cos(a) * r * 3.05,
+        y: -2.78 + Math.sin(a) * r * 0.3 + (rand() - 0.5) * 0.06,
+        s: 0.82 + rand() * 0.36,
+        ph: rand() * Math.PI * 2,
+      });
+    }
+    // 手前の人が上に来るよう、下にいる人ほど後に描く
+    this.figPos.sort((p, q) => q.y - p.y);
+    const figMat = () => new THREE.MeshBasicMaterial({ color: 0xffd166, transparent: true });
+    this.figHead = new THREE.InstancedMesh(
+      new THREE.SphereGeometry(0.05 * F_SC, 6, 5),
+      figMat(),
+      N_FIG
+    );
+    this.figBody = new THREE.InstancedMesh(
+      new THREE.CylinderGeometry(0.028 * F_SC, 0.062 * F_SC, 0.15 * F_SC, 5),
+      figMat(),
+      N_FIG
+    );
+    this.figHead.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.figBody.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.gVoice.add(this.figHead, this.figBody);
+    this._fm = new THREE.Matrix4();
+    this._fv = new THREE.Vector3();
+    this.F_SC = F_SC;
+
+    this.crowdTag = tag(
+      '署名 1,200人超 — 作っている当事者（1体＝10人）',
+      0.35,
+      -3.22,
       '#9fb6dd',
-      19,
+      15,
       600
     );
 
-    // ── 人 → 声明 の矢印
-    const ax0 = CROWD_X + 2.05;
-    const ax1 = PX - PW / 2 - 0.12;
-    const ay = CROWD_Y;
-    const arrowPts = [ax0, ay, 0, ax1, ay, 0, ax1, ay, 0, ax1 - 0.16, ay + 0.1, 0, ax1, ay, 0, ax1 - 0.16, ay - 0.1, 0];
-    const arG = new THREE.BufferGeometry();
-    arG.setAttribute('position', new THREE.Float32BufferAttribute(arrowPts, 3));
-    this.signArrow = new THREE.LineSegments(
-      arG,
-      new THREE.LineBasicMaterial({ color: 0xffd166, transparent: true, opacity: 0 })
-    );
-    this.gVoice.add(this.signArrow);
-    this.signArrowTag = makeLabel('署名', {
-      fontSize: 21,
-      height: 0.19,
+    this.voiceTitle = makeLabel('Pacing the Frontier（2026-07-28）', {
+      fontSize: 33,
+      height: 0.29,
       color: '#ffd166',
       weight: 800,
     });
-    this.signArrowTag.position.set((ax0 + ax1) / 2, ay + 0.22, 0);
-    this.signArrowTag.material.opacity = 0;
-    this.gVoice.add(this.signArrowTag);
+    this.voiceTitle.position.set(0, 3.5, 0);
+    this.gVoice.add(this.voiceTitle);
 
     // ══════ 1: 2本の年表
     this.gTime = new THREE.Group();
@@ -361,47 +533,115 @@ export default class FrontierScene extends BaseScene {
     const df = inAt(bf, 2) * (1 - outAt(bf, 3));
     const rg = inAt(bf, 3);
 
-    // ── 内側からの声
+    // ── アクセルとブレーキ
     this.gVoice.visible = bf < 1.05;
     if (this.gVoice.visible) {
       const a = 1 - outAt(bf, 1);
+      const { GX, GY, GR } = this.GAUGE;
+      const { CX, CY } = this.CAR;
       this.voiceTitle.material.opacity = a * clamp(grow * 2);
 
       /*
-       * 人は InstancedMesh なので個別に濃さを変えられない。
-       * 代わりに大きさで一人ずつ立ち上げ、そのあとは軽く揺らして生きている感じを出す。
+       * 一巡させる。
+       *   0.00-0.62 アクセルの踏み加減で加速・減速（求めているもの）
+       *   0.68-1.00 ブレーキで止める（求めていないほう）
+       * 速度はペダルに遅れて追従させる。即座に一致すると操作の実感が出ない。
        */
+      const T = (time % 13) / 13;
+      let press = 0; // アクセルの踏み込み 0..1
+      let brake = 0;
+      if (T < 0.62) {
+        press = 0.5 + 0.44 * Math.sin((T / 0.62) * Math.PI * 3 - Math.PI / 2);
+      } else if (T < 0.7) {
+        press = lerp(0.5 + 0.44 * Math.sin(Math.PI * 3 - Math.PI / 2), 0, (T - 0.62) / 0.08);
+      } else {
+        brake = ease(clamp((T - 0.7) / 0.12));
+      }
+      const target = brake > 0 ? 0 : press;
+      const k = brake > 0 ? 3.4 : 1.7;
+      this._speed = lerp(this._speed ?? 0, target, Math.min(1, dt * k)) * clamp(grow * 1.4);
+      const v = this._speed;
+
+      // 針
+      const deg = lerp(196, 12, v);
+      const rad = (deg * Math.PI) / 180;
+      const np = this.needle.geometry.attributes.position;
+      np.setXYZ(0, GX, GY, 0);
+      np.setXYZ(1, GX + Math.cos(rad) * (GR - 0.16), GY + Math.sin(rad) * (GR - 0.16), 0);
+      np.needsUpdate = true;
+
+      const g0 = a * clamp(grow * 2);
+      this.needle.material.opacity = g0;
+      this.needleHub.material.opacity = g0;
+      this.gaugeArcs.forEach((l, i) => (l.material.opacity = a * clamp(grow * 3 - i * 0.35) * 0.9));
+      this.gaugeTicks.material.opacity = g0 * 0.6;
+      this.gaugeTag.material.opacity = g0;
+
+      // 車とタイヤ
+      this._wheelRot = (this._wheelRot ?? 0) + v * dt * 11;
+      this.wheels.forEach((w) => (w.g.rotation.z = -this._wheelRot));
+      this.gCar.position.set(CX + v * 0.16, CY + Math.sin(time * 2.2) * 0.012 * v, 0);
+      // 減速中は前のめりになる
+      this.gCar.rotation.z = -brake * 0.045 * (1 - v);
+      const car = a * clamp(grow * 2.4 - 0.3);
+      this.carFill.material.opacity = car * 0.85;
+      this.carLine.material.opacity = car;
+      this.carGlass.material.opacity = car * 0.7;
+      this.carLamp.material.opacity = car * clamp(0.35 + v);
+      this.wheels.forEach((w) => {
+        w.rim.material.opacity = car * 0.9;
+        w.spokes.material.opacity = car * 0.85;
+      });
+      this.road.material.opacity = car * 0.6;
+      this.motion.material.opacity = car * clamp(v * 1.6 - 0.25) * 0.6;
+      this.skid.material.opacity = car * brake * (1 - v) * 0.7;
+
+      // ペダル。踏むほど板が寝る。
+      this.accel.g.rotation.z = -0.2 - press * 0.55;
+      this.brake.g.rotation.z = -0.2 - brake * 0.55;
+      const ask = clamp(sign * 1.8 - 0.3);
+      const accelOn = a * ask * (brake > 0.1 ? 0.45 : 1);
+      this.accel.plate.material.opacity = accelOn * 0.95;
+      this.accel.arm.material.opacity = accelOn * 0.8;
+      this.accel.hinge.material.opacity = accelOn * 0.9;
+      this.accel.floor.material.opacity = a * ask * 0.8;
+      this.accelTag.material.opacity = accelOn;
+      this.accelNote.material.opacity = accelOn;
+      this.accelGhost.material.opacity = accelOn * 0.85;
+      this.linkAccel.material.opacity = accelOn * 0.45;
+
+      const brakeOn = a * ask * (brake > 0.1 ? 1 : 0.5);
+      this.brake.plate.material.opacity = brakeOn * 0.9;
+      this.brake.arm.material.opacity = brakeOn * 0.75;
+      this.brake.hinge.material.opacity = brakeOn * 0.85;
+      this.brake.floor.material.opacity = a * ask * 0.8;
+      this.brakeTag.material.opacity = brakeOn;
+      this.brakeNote.material.opacity = a * ask * (brake > 0.1 ? 1 : 0.55);
+
+      const tools = clamp(sign * 2.2 - 1.0);
+      this.tools.forEach((o) => (o.material.opacity = a * tools * 0.7));
+      this.toolTags.forEach((s) => (s.material.opacity = a * tools));
+      this.toolsTag.material.opacity = a * clamp(sign * 2.4 - 1.5);
+
+      // 署名者。補足なので最後に、動きも小さく。
       const m = this._fm;
+      const sc = this.F_SC;
       this.figPos.forEach((f, i) => {
-        const t = easeOut(clamp(grow * 2.6 - (i / this.figPos.length) * 1.4));
-        const bob = Math.sin(time * 1.3 + f.ph) * 0.012;
-        const x = f.x + f.jx;
-        m.makeTranslation(x, f.y + 0.135 + bob, 0);
-        m.scale(new THREE.Vector3(t, t, t));
+        const t = easeOut(clamp(grow * 2.6 - (i / this.figPos.length) * 1.2)) * f.s;
+        const bob = Math.sin(time * 1.2 + f.ph) * 0.004;
+        this._fv.set(t, t, t);
+        m.makeTranslation(f.x, f.y + 0.135 * sc * f.s + bob, 0);
+        m.scale(this._fv);
         this.figHead.setMatrixAt(i, m);
-        m.makeTranslation(x, f.y + bob, 0);
-        m.scale(new THREE.Vector3(t, t, t));
+        m.makeTranslation(f.x, f.y + bob, 0);
+        m.scale(this._fv);
         this.figBody.setMatrixAt(i, m);
       });
       this.figHead.instanceMatrix.needsUpdate = true;
       this.figBody.instanceMatrix.needsUpdate = true;
-      this.figHead.material.opacity = a * 0.95;
-      this.figBody.material.opacity = a * 0.8;
-      this.labTags.forEach((s, k) => (s.material.opacity = a * clamp(grow * 3 - 0.6 - k * 0.15)));
-      this.crowdTag.material.opacity = a * clamp(grow * 2.4 - 1.0);
-
-      // 人が出そろってから、声明の中身を順に開く
-      const panel = clamp(sign * 1.8 - 0.4);
-      this.panelFill.material.opacity = a * panel * 0.75;
-      this.panelWire.material.opacity = a * panel * 0.55;
-      this.panelDiv.material.opacity = a * panel * 0.5;
-      this.panelHead.material.opacity = a * panel;
-      this.panelLines.forEach((s, i) => {
-        s.material.opacity = a * clamp(sign * 2.4 - 0.9 - i * 0.45);
-      });
-      this.panelNote.material.opacity = a * clamp(sign * 2.4 - 2.2);
-      this.signArrow.material.opacity = a * panel * 0.8;
-      this.signArrowTag.material.opacity = a * panel;
+      this.figHead.material.opacity = a * 0.8;
+      this.figBody.material.opacity = a * 0.65;
+      this.crowdTag.material.opacity = a * clamp(grow * 2.4 - 1.2) * 0.9;
     }
     // ── 2本の年表
     this.gTime.visible = tl > 0.01;
